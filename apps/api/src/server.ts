@@ -7,10 +7,10 @@ import {
     AuditLogEvent, 
     EmbedBuilder, 
     ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
     StringSelectMenuBuilder, 
-    ChannelType 
+    ChannelType,
+    ButtonBuilder,
+    ButtonStyle
 } from 'discord.js';
 
 const app = express();
@@ -34,8 +34,13 @@ interface IsolatedBot {
 }
 const isolatedBots = new Map<string, IsolatedBot>();
 
+// 🔒 إعدادات الحماية والتحقق الإداري لأبو عتب
 const DEVELOPER_ID = '1065985362658345040'; // حساب أبو عتب
+const WEB_PASSWORD = 'KRB_SECRET_2026';     // كلمة مرور حماية الموقع (غيرها براحتك)
 const PREFIX = '.';
+
+// ذاكرة مؤقتة لجمع بيانات إعداد التكت خطوة بخطوة
+const ticketSetupSession = new Map<string, { step: number; category: string; image?: string; title?: string; desc?: string }>();
 
 const client = new Client({
     intents: [
@@ -66,7 +71,7 @@ client.on('guildMemberAdd', async (member) => {
             }
             await member.timeout(2419200000, 'KRB Security: Unapproved bot isolated.').catch(() => {});
 
-            let inviterTag = "غير معروف أو برابط عام";
+            let inviterTag = "غير معروف";
             try {
                 const fetchedLogs = await member.guild.fetchAuditLogs({
                     limit: 1,
@@ -100,11 +105,12 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // ==========================================
-// ⚔️ حزمة الأوامر العالمية المحدثة (تم حل مشكلة الـ Null تماماً)
+// ⚔️ نظام الأوامر المحمي والمخصص (أبو عتب فقط)
 // ==========================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
+    // جدار حماية البلاك ليست
     if (blacklistedUsers.has(message.author.id) || blacklistedGuilds.has(message.guild.id)) {
         if (message.content.startsWith(PREFIX)) {
             await message.reply(`❌ **تواصل مع المطور عليك بلاك ليست**\n⚠️ للحصول على تصريح تواصل مع: <@${DEVELOPER_ID}>`).catch(() => {});
@@ -112,56 +118,121 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // نظام جمع معلومات الـ Embed خطوة بخطوة للتذاكر
+    if (ticketSetupSession.has(message.author.id)) {
+        const session = ticketSetupSession.get(message.author.id)!;
+        
+        // الخطوة 1: استقبال رابط الصورة
+        if (session.step === 1) {
+            session.image = message.content;
+            session.step = 2;
+            await message.reply('📝 الحين أرسل **عنوان الـ Embed** الذي تريده أن يظهر للتذكرة:');
+            return;
+        }
+        // الخطوة 2: استقبال العنوان
+        if (session.step === 2) {
+            session.title = message.content;
+            session.step = 3;
+            await message.reply('🖊️ خطوة أخيرة، أرسل **الوصف أو الكلام المكتوب** داخل التذكرة:');
+            return;
+        }
+        // الخطوة 3: التنفيذ وصنع التذكرة بناءً على كلامه وصورته
+        if (session.step === 3) {
+            session.desc = message.content;
+            ticketSetupSession.delete(message.author.id); // إنهاء الجلسة
+
+            await message.reply('⏳ جاري إنشاء وتجهيز الغرفة الفخمة بالـ Embed الخاص بك...');
+
+            const channelName = `${session.category}-${message.author.username}`;
+            try {
+                const ticketChannel = await message.guild.channels.create({
+                    name: channelName,
+                    type: ChannelType.GuildText,
+                    permissionOverwrites: [
+                        { id: message.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                        { id: message.author.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                        { id: client.user!.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                    ]
+                });
+
+                if (ticketChannel) {
+                    const customEmbed = new EmbedBuilder()
+                        .setTitle(session.title)
+                        .setDescription(`${session.desc}\n\n صاحب التذكرة: <@${message.author.id}>`)
+                        .setColor('#000000');
+
+                    // إذا وضع رابط صورة صالح نقوم بإضافته فوراً
+                    if (session.image.startsWith('http')) {
+                        customEmbed.setImage(session.image);
+                    }
+
+                    const closeBtn = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                        new ButtonBuilder().setCustomId('close_krb_ticket').setLabel('إغلاق التذكرة 🔒').setStyle(ButtonStyle.Danger)
+                    );
+
+                    await ticketChannel.send({ embeds: [customEmbed], components: [closeBtn] });
+                }
+            } catch (err) {
+                await message.reply('❌ فشل إنشاء التذكرة، يرجى التأكد من صلاحيات البوت.');
+            }
+            return;
+        }
+    }
+
     if (!message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
 
-    // 1. أمر المساعدة الشامل
+    // أمر المساعدة العام للجميع
     if (command === 'help') {
+        const isOwner = message.author.id === DEVELOPER_ID;
         const helpEmbed = new EmbedBuilder()
             .setTitle('🔳 **لوحة أوامر نظام KRB العالمي**')
-            .setDescription('مرحباً بك في قائمة التحكم الشاملة. الأوامر المتاحة:')
-            .addFields(
-                { name: '🛡️ الحماية والإدارة', value: '`.security` - حالة النظام الأمني الحالي\n`.lock` - قفل الشات بالكامل\n`.unlock` - فتح الشات المغلَق\n`.clear [العدد]` - تنظيف الرسائل بسرعة' },
-                { name: '⚙️ العقوبات والرقابة', value: '`.ban [@عضو]` - حظر عضو نهائياً\n`.kick [@عضو]` - طرد عضو من السيرفر\n`.mute [@عضو]` - كتم العضو تلقائياً\n`.unmute [@عضو]` - إلغاء كتم العضو' },
-                { name: '🎫 أنظمة الدعم', value: '`.ticket-setup` - إنشاء لوحة التذاكر الفخمة المماثلة لطلبك' }
-            )
-            .setColor('#000000')
-            .setFooter({ text: 'KRB INFRASTRUCTURE v2.5' });
-
-        await message.channel.send({ embeds: [helpEmbed] });
-    }
-
-    // 2. أمر إنشاء التكت الفخم (نفس تصميم image_11 و image_12)
-    if (command === 'ticket-setup') {
-        if (message.author.id !== DEVELOPER_ID && !message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply('❌ الصلاحية محصورة للإدارة العليا ونظام KRB.');
-        }
-
-        const setupEmbed = new EmbedBuilder()
-            .setTitle('KRB TICKET 🎟️')
-            .setDescription('الدعم متوفر 24 ساعة لخدمتكم.\n\nإضغط على القائمة بالأسفل وافتح تذكرتك المخصصة فوراً.')
+            .setDescription(isOwner ? 'مرحباً يا أبو عتب، الأوامر متاحة لك بالكامل:' : 'مرحباً بك في نظام المساعدة العام لـ KRB:')
             .setColor('#000000');
 
-        // القائمة المنسدلة المتطابقة تماماً مع تصميمك
+        if (isOwner) {
+            helpEmbed.addFields(
+                { name: '🛡️ الحماية والإدارة الحصرية', value: '`.security` - حالة النظام الأمني الحالي\n`.lock` - قفل الشات\n`.unlock` - فتح الشات\n`.clear [العدد]` - تنظيف الشات بسرعة' },
+                { name: '⚙️ الرقابة والعقوبات', value: '`.ban [@عضو]` - حظر\n`.kick [@عضو]` - طرد\n`.mute [@عضو]` - كتم\n`.unmute [@عضو]` - فك الكتم' },
+                { name: '🎫 نظام التذاكر', value: '`.ticket-setup` - نشر لوحة فتح التذاكر' }
+            );
+        } else {
+            helpEmbed.addFields(
+                { name: 'ℹ️ المساعدة العامة', value: 'أنت لا تملك صلاحيات المطور لرؤية أدوات التحكم الخاصة بـ KRB Security. تواصل مع الإدارة لأي استفسار.' }
+            );
+        }
+        return message.channel.send({ embeds: [helpEmbed] });
+    }
+
+    // 🔒 جدار التحقق الفوري لجميع الأوامر التالية (أبو عتب فقط)
+    if (message.author.id !== DEVELOPER_ID) {
+        return message.reply('❌ **منت صاحب البوت!** هذا الأمر مخصص للإدارة العليا فقط.').catch(() => {});
+    }
+
+    // أمر نشر لوحة التذاكر المنسدلة
+    if (command === 'ticket-setup') {
+        const setupEmbed = new EmbedBuilder()
+            .setTitle('KRB TICKET 🎟️')
+            .setDescription('اضغط على القائمة المنسدلة بالأسفل وافتح تذكرتك المخصصة بالـ Embed التفاعلي فوراً.')
+            .setColor('#000000');
+
         const menu = new StringSelectMenuBuilder()
             .setCustomId('krb_ticket_select')
             .setPlaceholder('إضغط لفتح التذكرة')
             .addOptions([
-                { label: 'ل الدعم', value: 'tk_support', description: 'فتح تذكرة الدعم الفني العام', emoji: '⚙️' },
-                { label: 'ل الهاكات', value: 'tk_exploits', description: 'قسم مخصص لاستفسارات وبلاغات الهاكات والسكربتات', emoji: '💻' },
-                { label: 'ل الشراء', value: 'tk_buy', description: 'الشراء والاشتراكات الفورية', emoji: '💰' },
+                { label: 'ل الدعم', value: 'tk_support', description: 'تذكرة الدعم الفني بالـ Embed المخصص', emoji: '⚙️' },
+                { label: 'ل الهاكات', value: 'tk_exploits', description: 'تذكرة قسم الهاكات بالـ Embed المخصص', emoji: '💻' },
+                { label: 'ل الشراء', value: 'tk_buy', description: 'تذكرة الشراء والاشتراكات بالـ Embed المخصص', emoji: '💰' },
                 { label: 'Refresh', value: 'tk_refresh', description: 'تحديث حالة نظام التذاكر', emoji: '🔄' }
             ]);
 
         const rowMenu = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
-
         await message.channel.send({ embeds: [setupEmbed], components: [rowMenu] });
         await message.delete().catch(() => {});
     }
 
-    // 3. أمر حالة الأمان
     if (command === 'security') {
         const secEmbed = new EmbedBuilder()
             .setTitle('🛡️ تقرير حالة KRB SECURITY')
@@ -170,31 +241,24 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [secEmbed] });
     }
 
-    // 4. أوامر القفل والفتح والتنظيف الإداري
     if (command === 'lock') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
         await (message.channel as TextChannel).permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-        await message.channel.send('🔒 **تم إغلاق القناة النصية بنجاح بأمر من النظام.**');
+        await message.channel.send('🔒 **تم إغلاق القناة النصية بنجاح بأمر من صاحب البوت.**');
     }
 
     if (command === 'unlock') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.ManageChannels)) return;
         await (message.channel as TextChannel).permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
         await message.channel.send('🔓 **تم إعادة فتح القناة النصية للجميع.**');
     }
 
     if (command === 'clear') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
         const amount = parseInt(args[0]) || 50;
-        if (amount > 100 || amount < 1) return message.reply('❌ يرجى تحديد عدد بين 1 و 100');
         await (message.channel as TextChannel).bulkDelete(amount, true);
         const replyMsg = await message.channel.send(`🧹 تم تنظيف \`${amount}\` رسالة بنجاح.`);
         setTimeout(() => replyMsg.delete().catch(() => {}), 3000);
     }
 
-    // 5. حل مشكلة الـ Null الصارمة بإضافة الـ أمان المباشر (?.first)
     if (command === 'ban') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.BanMembers)) return;
         const target = message.mentions.members?.first(); 
         if (!target || !target.bannable) return message.reply('❌ تعذّر العثور على العضو أو لا يمكن حظره.');
         await target.ban({ reason: 'KRB Admin Command Action.' });
@@ -202,7 +266,6 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === 'kick') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.KickMembers)) return;
         const target = message.mentions.members?.first();
         if (!target || !target.kickable) return message.reply('❌ تعذّر العثور على العضو أو لا يمكن طرده.');
         await target.kick('KRB Admin Command Action.');
@@ -210,7 +273,6 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === 'mute') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return;
         const target = message.mentions.members?.first();
         if (!target || !target.manageable) return message.reply('❌ تعذّر كتم العضو.');
         await target.timeout(3600000, 'Muted via KRB Command.'); 
@@ -218,7 +280,6 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === 'unmute') {
-        if (!message.member?.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return;
         const target = message.mentions.members?.first();
         if (!target) return message.reply('❌ اذكر العضو لإلغاء الكتم.');
         await target.timeout(null).catch(() => {});
@@ -227,62 +288,33 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==========================================
-// 💡 معالجة تفاعلات القائمة المنسدلة بدون أي تعليق
+// 💡 معالجة تفاعلات القائمة المنسدلة للتذاكر والـ Embed المخصص
 // ==========================================
 client.on('interactionCreate', async (interaction) => {
-    if (blacklistedUsers.has(interaction.user.id) || (interaction.guildId && blacklistedGuilds.has(interaction.guildId))) {
-        if (interaction.isRepliable()) {
-            await interaction.reply({ content: `❌ **تواصل مع المطور عليك بلاك ليست** <@${DEVELOPER_ID}>`, ephemeral: true });
-        }
-        return;
-    }
+    if (blacklistedUsers.has(interaction.user.id) || (interaction.guildId && blacklistedGuilds.has(interaction.guildId))) return;
 
-    // عند اختيار خيار من القائمة المنسدلة للتذاكر
     if (interaction.isStringSelectMenu() && interaction.customId === 'krb_ticket_select') {
         const selectedValue = interaction.values[0];
 
-        // معالجة زر الريفرش الذكي
         if (selectedValue === 'tk_refresh') {
             await interaction.reply({ content: '🔄 تم تحديث حالة الاتصال بالخادم ونظام الاستجابة بنجاح!', ephemeral: true });
             return;
         }
 
-        // تفادي تعليق البوت بالرد المبدئي الفوري
-        await interaction.deferReply({ ephemeral: true });
-
         let categoryName = 'دعم';
         if (selectedValue === 'tk_exploits') categoryName = 'هاكات';
         if (selectedValue === 'tk_buy') categoryName = 'شراء';
 
-        const channelName = `${categoryName}-${interaction.user.username}`;
-        
-        try {
-            const ticketChannel = await interaction.guild?.channels.create({
-                name: channelName,
-                type: ChannelType.GuildText,
-                permissionOverwrites: [
-                    { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-                    { id: client.user!.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-                ]
-            });
+        // بدء جلسة تجميع بيانات الـ Embed التفاعلي للعضو بشكل سري وخاص به
+        ticketSetupSession.set(interaction.user.id, {
+            step: 1,
+            category: categoryName
+        });
 
-            if (ticketChannel) {
-                const welcomeEmbed = new EmbedBuilder()
-                    .setTitle(`🔳 تذكرة قسم [${categoryName.toUpperCase()}]`)
-                    .setDescription(`أهلاً بك <@${interaction.user.id}> في تذكرتك الخاصة. يرجى طرح استفسارك أو طلبك هنا وسيتواصل معك الفريق الفوري لـ KRB.`)
-                    .setColor('#000000');
-
-                const closeBtn = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                    new ButtonBuilder().setCustomId('close_krb_ticket').setLabel('إغلاق التذكرة 🔒').setStyle(ButtonStyle.Danger)
-                );
-
-                await ticketChannel.send({ embeds: [welcomeEmbed], components: [closeBtn] });
-                await interaction.editReply({ content: `✅ تم إنشاء تذكرتك بنجاح هنا: <#${ticketChannel.id}>` });
-            }
-        } catch (err) {
-            await interaction.editReply({ content: '❌ فشل إنشاء التذكرة، يرجى التحقق من الصلاحيات الإدارية للبوت.' });
-        }
+        await interaction.reply({ 
+            content: `🖼️ **أهلاً بك في معالج إنشاء تذكرتك المخصصة لقسم [${categoryName.toUpperCase()}]**\n\nيرجى إرسال **رابط الصورة (URL)** التي تريد وضعها داخل الـ Embed (أو اكتب 'لا يوجد' لتخطي الصورة):`, 
+            ephemeral: true 
+        });
     }
 
     if (interaction.isButton() && interaction.customId === 'close_krb_ticket') {
@@ -292,21 +324,55 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // ==========================================
-// 🌐 واجهة لوحة تحكم الجوال المحدثة والمنظمة كاملاً
+// 🌐 واجهة الموقع المحمية بكلمة مرور (جدار الحماية المنيع)
 // ==========================================
 app.get('/', (req, res) => {
+    // التحقق من كلمة المرور الممررة عبر الرابط للتأمين الكامل
+    const password = req.query.password;
+
+    if (password !== WEB_PASSWORD) {
+        return res.send(`
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>KRB SECURITY - AUTHENTICATION</title>
+            <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+            <style>
+                body { background: #000; color: #fff; font-family: 'Cairo', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0; }
+                .login-box { background: #09090b; padding: 30px; border-radius: 8px; border: 1px solid #27272a; text-align: center; width: 90%; max-width: 400px; }
+                h2 { font-size: 18px; margin-bottom: 20px; }
+                input { width: 100%; padding: 12px; background: #18181b; border: 1px solid #27272a; color: #fff; border-radius: 6px; text-align: center; font-size: 14px; margin-bottom: 15px; box-sizing: border-box; }
+                button { width: 100%; padding: 12px; background: #fff; color: #000; font-weight:700; border: none; border-radius:6px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div class="login-box">
+                <h2>🔒 جدار حماية لوحة تحكم KRB</h2>
+                <form method="GET" action="/">
+                    <input type="password" name="password" placeholder="أدخل كلمة مرور النظام السري..." required>
+                    <button type="submit">تسجيل الدخول والتحقق الأمني</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        `);
+    }
+
+    // إذا كانت كلمة المرور صحيحة يتم عرض لوحة التحكم الكاملة
     let quarantineCards = '';
     isolatedBots.forEach((bot) => {
         quarantineCards += `
         <div class="card quarantine-card">
-            <img class="bot-avatar" src="${bot.avatar}" alt="Bot Avatar">
+            <img class="bot-avatar" src="${bot.avatar}">
             <div class="bot-details">
                 <h3>${bot.tag}</h3>
                 <p><strong>السيرفر:</strong> ${bot.guildName}</p>
                 <p><strong>الداعي الفعلي:</strong> ${bot.invitedBy}</p>
             </div>
             <div class="card-actions">
-                <form action="/api/approve-bot" method="POST" style="width:100%;">
+                <form action="/api/approve-bot?password=${WEB_PASSWORD}" method="POST" style="width:100%;">
                     <input type="hidden" name="botId" value="${bot.id}">
                     <input type="hidden" name="guildId" value="${bot.guildId}">
                     <button type="submit" class="btn btn-approve">توثيق وموافقة كـ KRB ✅</button>
@@ -317,7 +383,7 @@ app.get('/', (req, res) => {
     });
 
     if (!quarantineCards) {
-        quarantineCards = `<p style="color:var(--text-secondary); text-align:center; padding: 20px; font-size:14px;">🛡️ المعتقل نظيف. لا توجد قضايا اختراق أو بوتات معزولة حالياً.</p>`;
+        quarantineCards = `<p style="color:#a1a1aa; text-align:center; padding: 20px; font-size:14px;">🛡️ المعتقل نظيف. لا توجد قضايا اختراق حالياً.</p>`;
     }
 
     const serversTable = client.guilds.cache.map(g => `
@@ -334,115 +400,77 @@ app.get('/', (req, res) => {
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>KRB ULTIMATE PANEL</title>
         <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
         <style>
-            :root {
-                --bg-main: #000000;
-                --bg-card: #09090b;
-                --border-color: #27272a;
-                --text-primary: #ffffff;
-                --text-secondary: #a1a1aa;
-                --accent-red: #ef4444;
-                --accent-green: #22c55e;
-            }
+            :root { --bg-main: #000000; --bg-card: #09090b; --border-color: #27272a; --text-primary: #ffffff; --text-secondary: #a1a1aa; --accent-red: #ef4444; --accent-green: #22c55e; }
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
             body { background-color: var(--bg-main); color: var(--text-primary); padding: 15px; max-width: 1200px; margin: 0 auto; }
-            header { border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; display: flex; flex-direction: column; gap: 10px; }
-            header h1 { font-size: 18px; font-weight: 700; }
-            .status-badge { background-color: #18181b; border: 1px solid var(--border-color); padding: 5px 12px; border-radius: 9999px; font-size: 12px; color: var(--accent-green); width: fit-content; }
-            
-            .section-title { font-size: 15px; font-weight: 700; margin: 25px 0 15px 0; border-right: 4px solid #fff; padding-right: 10px; color: #fff; }
-            
+            header { border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+            .section-title { font-size: 15px; font-weight: 700; margin: 25px 0 15px 0; border-right: 4px solid #fff; padding-right: 10px; }
             .grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
-            @media (min-width: 768px) { .grid { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); } header { flex-direction: row; justify-content: space-between; align-items: center; } header h1 { font-size: 22px; } }
-            
-            .card { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; display: flex; flex-direction: column; }
-            
-            .quarantine-container { display: flex; flex-direction: column; gap: 15px; }
-            .quarantine-card { flex-direction: row; flex-wrap: wrap; gap: 15px; align-items: center; position: relative; border-left: 3px solid var(--accent-red); }
-            .bot-avatar { width: 55px; height: 55px; border-radius: 50%; border: 1px solid var(--border-color); background: #222; }
-            .bot-details { flex: 1; min-width: 200px; }
-            .bot-details h3 { font-size: 15px; color: #fff; margin-bottom: 4px; }
-            .bot-details p { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
-            .card-actions { width: 100%; margin-top: 10px; }
-            
-            label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 600; }
-            input, textarea, select { width: 100%; background: #18181b; border: 1px solid var(--border-color); color: var(--text-primary); padding: 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; -webkit-appearance: none; }
-            
-            .btn { width: 100%; background: var(--text-primary); color: var(--bg-main); border: none; padding: 12px; font-weight: 700; cursor: pointer; border-radius: 6px; font-size: 13px; }
+            @media (min-width: 768px) { .grid { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); } }
+            .card { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; }
+            .quarantine-card { display: flex; align-items: center; gap: 15px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 3px solid var(--accent-red); }
+            .bot-avatar { width: 50px; height: 50px; border-radius: 50%; }
+            .bot-details { flex: 1; }
+            label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+            input, textarea, select { width: 100%; background: #18181b; border: 1px solid var(--border-color); color: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+            .btn { width: 100%; background: #fff; color: #000; border: none; padding: 12px; font-weight: 700; border-radius: 6px; cursor: pointer; }
             .btn-danger { background: transparent; border: 1px solid var(--accent-red); color: var(--accent-red); }
-            .btn-approve { background: #fff; color: #000; border: 1px solid #fff; }
-            .btn-approve:hover { background: var(--accent-green); border-color: var(--accent-green); color:#fff; }
-            
-            .table-container { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; overflow-x: auto; margin-top: 15px; }
-            table { width: 100%; border-collapse: collapse; text-align: right; min-width: 500px; }
-            th { color: var(--text-secondary); font-size: 12px; padding: 12px; border-bottom: 1px solid var(--border-color); }
-            td { padding: 12px; border-bottom: 1px solid var(--border-color); font-size: 13px; }
-            .code-style { background: #18181b; padding: 3px 6px; border-radius: 4px; font-family: monospace; border: 1px solid var(--border-color); font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; text-align: right; }
+            th, td { padding: 12px; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+            .code-style { background: #18181b; padding: 3px 6px; border-radius: 4px; font-family: monospace; }
         </style>
     </head>
     <body>
         <header>
-            <h1>KRB CONTROL INFRASTRUCTURE</h1>
-            <div class="status-badge">مرحباً أبو عتب | وحدة التحكم الذكية الحية</div>
+            <h2>KRB CONTROL INFRASTRUCTURE</h2>
+            <span style="color:var(--accent-green)">🔒 مصرح ومحمي بالكامل</span>
         </header>
 
-        <h2 class="section-title">🤖 رادار طلبات توثيق وفك عزل البوتات المستجدة</h2>
-        <div class="quarantine-container">
-            ${quarantineCards}
-        </div>
+        <h3 class="section-title">🤖 رادار طلبات توثيق وفك عزل البوتات</h3>
+        <div>${quarantineCards}</div>
 
-        <h2 class="section-title">⚙️ أدوات النطاق والتحكم عن بعد</h2>
+        <h3 class="section-title">⚙️ أدوات النطاق والتحكم عن بعد</h3>
         <div class="grid">
             <div class="card">
-                <h2>✉️ إرسال رسالة مخصصة لسيرفر</h2>
-                <form action="/api/send-custom" method="POST">
+                <form action="/api/send-custom?password=${WEB_PASSWORD}" method="POST">
                     <label>معرف السيرفر المستهدف (Guild ID) *</label>
-                    <input type="text" name="guildId" placeholder="ضع الـ ID الخاص بالسيرفر..." required>
-                    <label>معرف القناة النصية (Channel ID) - اختياري</label>
-                    <input type="text" name="channelId" placeholder="اتركه فارغاً للشات العام الافتراضي...">
+                    <input type="text" name="guildId" required>
                     <label>نص الرسالة</label>
-                    <textarea name="message" rows="3" placeholder="اكتب رسالتك الفخمة هنا..." required></textarea>
-                    <button type="submit" class="btn">إطلاق الإرسال الفوري 🚀</button>
+                    <textarea name="message" rows="3" required></textarea>
+                    <button type="submit" class="btn">إطلق الإرسال الفوري 🚀</button>
                 </form>
             </div>
 
             <div class="card">
-                <h2>🚫 إدارة حظر النظام (Blacklist)</h2>
-                <form action="/api/blacklist" method="POST">
-                    <label>نوع الحظر الأمني</label>
+                <form action="/api/blacklist?password=${WEB_PASSWORD}" method="POST">
+                    <label>نوع الحظر</label>
                     <select name="type">
-                        <option value="user">حظر مستخدم محدد (User ID)</option>
+                        <option value="user">حظر مستخدم (User ID)</option>
                         <option value="guild">حظر سيرفر كامل (Server ID)</option>
                     </select>
                     <label>المعرف الفريد (ID) *</label>
-                    <input type="text" name="targetId" placeholder="ضع الرقم التعريفي هنا..." required>
-                    <label>الإجراء المطلوب</label>
+                    <input type="text" name="targetId" required>
+                    <label>الإجراء</label>
                     <select name="action">
-                        <option value="add">إدراج وتفعيل منشن المطور 🔒</option>
-                        <option value="remove">إزالة من البلاك ليست ✅</option>
+                        <option value="add">إدراج في البلاك ليست</option>
+                        <option value="remove">إزالة من البلاك ليست</option>
                     </select>
-                    <button type="submit" class="btn btn-danger">تحديث حظر النظام 🛡️</button>
+                    <button type="submit" class="btn btn-danger">تحديث الحظر الأمني 🛡️</button>
                 </form>
             </div>
         </div>
 
-        <h2 class="section-title">📦 خريطة السيرفرات المتصلة بالشبكة</h2>
-        <div class="table-container">
+        <h3 class="section-title">📦 خريطة السيرفرات المتصلة بالشبكة</h3>
+        <div class="card" style="overflow-x:auto;">
             <table>
                 <thead>
-                    <tr>
-                        <th>اسم السيرفر</th>
-                        <th>معرف السيرفر (ID)</th>
-                        <th>الأعضاء</th>
-                        <th>الحالة والأمان</th>
-                    </tr>
+                    <tr><th>اسم السيرفر</th><th>ID</th><th>الأعضاء</th><th>الحالة</th></tr>
                 </thead>
-                <tbody>
-                    ${serversTable || '<tr><td colspan="4" style="text-align: center; color: var(--text-secondary);">لا توجد سيرفرات متصلة حالياً.</td></tr>'}
-                </tbody>
+                <tbody>${serversTable}</tbody>
             </table>
         </div>
     </body>
@@ -450,76 +478,55 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 🚀 [API] فك العزل والتوثيق المباشر لبوت معزول
+// ==========================================
+// 🚀 حماية الـ APIs بكلمة المرور لضمان عدم الاختراق
+// ==========================================
 app.post('/api/approve-bot', async (req, res) => {
+    if (req.query.password !== WEB_PASSWORD) return res.status(403).send('غير مصرح لك.');
     const { botId, guildId } = req.body;
-    if (!botId || !guildId) return res.status(400).send('البيانات ناقصة.');
-
     try {
         whitelistedBots.add(botId);
         isolatedBots.delete(botId);
-
         const guild = await client.guilds.fetch(guildId);
         const targetBotMember = await guild.members.fetch(botId).catch(() => null);
-
         if (targetBotMember) {
-            await targetBotMember.timeout(null, 'Approved via KRB Dashboard.').catch(() => {});
+            await targetBotMember.timeout(null).catch(() => {});
             const sysChannel = guild.channels.cache.find(c => c.type === ChannelType.GuildText) as TextChannel;
-            if (sysChannel) {
-                sysChannel.send(`✅ **[KRB SECURITY]:** تم توثيق البوت <@${botId}> بنجاح من لوحة التحكم وإلغاء العزل والتجميد عنه.`);
-            }
+            if (sysChannel) sysChannel.send(`✅ **[KRB SECURITY]:** تم توثيق البوت وفك العزل عنه.`);
         }
-        res.send('<script>alert("✅ تم توثيق البوت وإلغاء عقوبة العزل عنه داخل السيرفر بنجاح!"); window.location.href="/";</script>');
-    } catch (error: any) {
-        res.status(500).send(`فشل التوثيق الأمني: ${error.message}`);
-    }
+        res.send(`<script>alert("✅ تم توثيق البوت!"); window.location.href="/?password=${WEB_PASSWORD}";</script>`);
+    } catch (error: any) { res.status(500).send(error.message); }
 });
 
-// 🚀 [API] استقبال وإرسال الرسائل المخصصة
 app.post('/api/send-custom', async (req, res) => {
-    const { guildId, channelId, message } = req.body;
-    if (!guildId || !message) return res.status(400).send('❌ خطأ: البيانات ناقصة!');
-
+    if (req.query.password !== WEB_PASSWORD) return res.status(403).send('غير مصرح لك.');
+    const { guildId, message } = req.body;
     try {
         const guild = await client.guilds.fetch(guildId);
-        if (!guild) return res.status(404).send('❌ خطأ: السيرفر غير موجود!');
-
-        let targetChannel: TextChannel | null = null;
-        if (channelId) {
-            targetChannel = (await guild.channels.fetch(channelId)) as TextChannel;
-        } else {
-            targetChannel = guild.channels.cache.find(
-                (ch) => ch.isTextBased() && ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)
-            ) as TextChannel;
-        }
-
-        if (!targetChannel) return res.status(400).send('❌ خطأ: لم أجد قناة نصية صالحة أمتلك فيها صلاحية الكتابة!');
+        const targetChannel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
+        if (!targetChannel) return res.status(400).send('قناة غير صالحة.');
         await targetChannel.send(message);
-        res.send('<script>alert("🚀 تم إرسال رسالتك بنجاح!"); window.location.href="/";</script>');
-    } catch (error: any) {
-        res.status(500).send(`❌ فشل الإرسال: ${error.message}`);
-    }
+        res.send(`<script>alert("🚀 تم الإرسال!"); window.location.href="/?password=${WEB_PASSWORD}";</script>`);
+    } catch (error: any) { res.status(500).send(error.message); }
 });
 
-// 🔒 [API] التحكم في البلاك ليست
 app.post('/api/blacklist', (req, res) => {
+    if (req.query.password !== WEB_PASSWORD) return res.status(403).send('غير مصرح لك.');
     const { type, targetId, action } = req.body;
-    if (!targetId) return res.status(400).send('❌ خطأ: ID مطلوب!');
-
     if (action === 'add') {
         if (type === 'user') blacklistedUsers.add(targetId);
         if (type === 'guild') blacklistedGuilds.add(targetId);
-    } else if (action === 'remove') {
+    } else {
         if (type === 'user') blacklistedUsers.delete(targetId);
         if (type === 'guild') blacklistedGuilds.delete(targetId);
     }
-    res.send('<script>alert("🔒 تم تحديث السجلات بنجاح!"); window.location.href="/";</script>');
+    res.send(`<script>alert("🔒 تم تحديث البلاك ليست!"); window.location.href="/?password=${WEB_PASSWORD}";</script>`);
 });
 
 app.listen(PORT, () => {
     if (process.env.DISCORD_TOKEN) {
         client.login(process.env.DISCORD_TOKEN);
     } else {
-        console.error('❌ كراش: لم يتم العثور على توكن البوت DISCORD_TOKEN في إعدادات Render!');
+        console.error('❌ DISCORD_TOKEN مفقود في Render!');
     }
 });
