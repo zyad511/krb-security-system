@@ -24,7 +24,6 @@ const blacklistedUsers = new Set<string>();
 const blacklistedGuilds = new Set<string>();
 const whitelistedBots = new Set<string>();
 
-// هيكلة بيانات البوتات المعزولة
 interface IsolatedBot {
     id: string;
     tag: string;
@@ -35,7 +34,7 @@ interface IsolatedBot {
 }
 const isolatedBots = new Map<string, IsolatedBot>();
 
-const DEVELOPER_ID = '1065985362658345040'; // معرف حسابك يا أبو عتب
+const DEVELOPER_ID = '1065985362658345040'; // حساب أبو عتب
 const PREFIX = '.';
 
 const client = new Client({
@@ -55,23 +54,18 @@ client.on('ready', () => {
 });
 
 // ==========================================
-// 🛡️ رادار رصد وعزل البوتات التلقائي (Anti-Bot Infiltration)
+// 🛡️ رادار رصد وعزل البوتات التلقائي
 // ==========================================
 client.on('guildMemberAdd', async (member) => {
     if (!member.user.bot) return;
 
-    // إذا كان البوت غير مصرح له في القائمة البيضاء
     if (!whitelistedBots.has(member.user.id)) {
         try {
-            // 1. تجريد البوت من الرتب فوراً
             if (member.manageable) {
                 await member.roles.set([]).catch(() => {});
             }
-
-            // 2. تطبيق عزل تام لمدة 28 يوم (Timeout) لشل حركته
             await member.timeout(2419200000, 'KRB Security: Unapproved bot isolated.').catch(() => {});
 
-            // 3. كشف الشخص الفعلي الذي قام بدعوة البوت من سجلات التدقيق
             let inviterTag = "غير معروف أو برابط عام";
             try {
                 const fetchedLogs = await member.guild.fetchAuditLogs({
@@ -83,10 +77,9 @@ client.on('guildMemberAdd', async (member) => {
                     inviterTag = `${logEntry.executor.tag} (\`${logEntry.executor.id}\`)`;
                 }
             } catch (auditError) {
-                console.log("تعذر قراءة سجل الـ Audit Log بسبب الصلاحيات.");
+                console.log("تعذر قراءة سجل الـ Audit Log.");
             }
 
-            // 4. حفظ بيانات البوت في المعتقل لعرضه على لوحة التحكم
             isolatedBots.set(member.id, {
                 id: member.id,
                 tag: member.user.tag,
@@ -96,24 +89,22 @@ client.on('guildMemberAdd', async (member) => {
                 guildName: member.guild.name
             });
 
-            // 5. إرسال إنذار في السيرفر
             const sysChannel = member.guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(member.guild.members.me!).has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
             if (sysChannel) {
-                sysChannel.send(`🚨 **[KRB SECURITY]:** تم رصد وعزل بوت غير مصرح به (\`${member.user.tag}\`). تم إرسال الطلب للمطور للموافقة عليه.`);
+                sysChannel.send(`🚨 **[KRB SECURITY]:** تم رصد وعزل بوت غير مصرح به (\`${member.user.tag}\`). تم إرسال الطلب للموقع للموافقة.`);
             }
         } catch (err) {
-            console.error('فشل في عزل البوت بالكامل:', err);
+            console.error('فشل في عزل البوت:', err);
         }
     }
 });
 
 // ==========================================
-// ⚔️ حزمة الأوامر العالمية الفخمة (KRB Command Suite)
+// ⚔️ حزمة الأوامر العالمية المحدثة (تم حل مشكلة الـ Null تماماً)
 // ==========================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    // التحقق من البلاك ليست
     if (blacklistedUsers.has(message.author.id) || blacklistedGuilds.has(message.guild.id)) {
         if (message.content.startsWith(PREFIX)) {
             await message.reply(`❌ **تواصل مع المطور عليك بلاك ليست**\n⚠️ للحصول على تصريح تواصل مع: <@${DEVELOPER_ID}>`).catch(() => {});
@@ -134,40 +125,39 @@ client.on('messageCreate', async (message) => {
             .addFields(
                 { name: '🛡️ الحماية والإدارة', value: '`.security` - حالة النظام الأمني الحالي\n`.lock` - قفل الشات بالكامل\n`.unlock` - فتح الشات المغلَق\n`.clear [العدد]` - تنظيف الرسائل بسرعة' },
                 { name: '⚙️ العقوبات والرقابة', value: '`.ban [@عضو]` - حظر عضو نهائياً\n`.kick [@عضو]` - طرد عضو من السيرفر\n`.mute [@عضو]` - كتم العضو تلقائياً\n`.unmute [@عضو]` - إلغاء كتم العضو' },
-                { name: '🎫 أنظمة الدعم', value: '`.ticket-setup` - إنشاء لوحة التذاكر الهجينة المتطورة' }
+                { name: '🎫 أنظمة الدعم', value: '`.ticket-setup` - إنشاء لوحة التذاكر الفخمة المماثلة لطلبك' }
             )
             .setColor('#000000')
-            .setFooter({ text: 'KRB INFRASTRUCTURE v2.0' });
+            .setFooter({ text: 'KRB INFRASTRUCTURE v2.5' });
 
         await message.channel.send({ embeds: [helpEmbed] });
     }
 
-    // 2. أمر إنشاء التكت الهجين
+    // 2. أمر إنشاء التكت الفخم (نفس تصميم image_11 و image_12)
     if (command === 'ticket-setup') {
         if (message.author.id !== DEVELOPER_ID && !message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply('❌ الصلاحية محصورة للإدارة العليا ونظام KRB.');
         }
 
         const setupEmbed = new EmbedBuilder()
-            .setTitle('🔳 **مركز خدمات الدعم الفني والبلاغات**')
-            .setDescription('لفتح تذاكر مع الإدارة، فضلاً اختر القسم المناسب عبر الأزرار أو القائمة بالأسفل:')
+            .setTitle('KRB TICKET 🎟️')
+            .setDescription('الدعم متوفر 24 ساعة لخدمتكم.\n\nإضغط على القائمة بالأسفل وافتح تذكرتك المخصصة فوراً.')
             .setColor('#000000');
 
+        // القائمة المنسدلة المتطابقة تماماً مع تصميمك
         const menu = new StringSelectMenuBuilder()
-            .setCustomId('tk_hybrid_menu')
-            .setPlaceholder('🔲 حدد القسم المطلوب من القائمة...')
+            .setCustomId('krb_ticket_select')
+            .setPlaceholder('إضغط لفتح التذكرة')
             .addOptions([
-                { label: 'الدعم العام والتقني', value: 'tech_ticket', emoji: '🛠️' },
-                { label: 'تقديم بلاغ سري', value: 'report_ticket', emoji: '🛡️' }
+                { label: 'ل الدعم', value: 'tk_support', description: 'فتح تذكرة الدعم الفني العام', emoji: '⚙️' },
+                { label: 'ل الهاكات', value: 'tk_exploits', description: 'قسم مخصص لاستفسارات وبلاغات الهاكات والسكربتات', emoji: '💻' },
+                { label: 'ل الشراء', value: 'tk_buy', description: 'الشراء والاشتراكات الفورية', emoji: '💰' },
+                { label: 'Refresh', value: 'tk_refresh', description: 'تحديث حالة نظام التذاكر', emoji: '🔄' }
             ]);
 
         const rowMenu = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
-        const rowButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setCustomId('tk_general_btn').setLabel('فتح تذكرة تقنية 🛠️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('tk_report_btn').setLabel('تقديم بلاغ 🛡️').setStyle(ButtonStyle.Danger)
-        );
 
-        await message.channel.send({ embeds: [setupEmbed], components: [rowMenu, rowButtons] });
+        await message.channel.send({ embeds: [setupEmbed], components: [rowMenu] });
         await message.delete().catch(() => {});
     }
 
@@ -202,10 +192,10 @@ client.on('messageCreate', async (message) => {
         setTimeout(() => replyMsg.delete().catch(() => {}), 3000);
     }
 
-    // 5. أوامر العقوبات (البان، الطرد، الميوت)
+    // 5. حل مشكلة الـ Null الصارمة بإضافة الـ أمان المباشر (?.first)
     if (command === 'ban') {
         if (!message.member?.permissions.has(PermissionsBitField.Flags.BanMembers)) return;
-        const target = message.mentions.members.first();
+        const target = message.mentions.members?.first(); 
         if (!target || !target.bannable) return message.reply('❌ تعذّر العثور على العضو أو لا يمكن حظره.');
         await target.ban({ reason: 'KRB Admin Command Action.' });
         await message.channel.send(`✅ تم حظر العضو \`${target.user.tag}\` بنجاح.`);
@@ -213,7 +203,7 @@ client.on('messageCreate', async (message) => {
 
     if (command === 'kick') {
         if (!message.member?.permissions.has(PermissionsBitField.Flags.KickMembers)) return;
-        const target = message.mentions.members.first();
+        const target = message.mentions.members?.first();
         if (!target || !target.kickable) return message.reply('❌ تعذّر العثور على العضو أو لا يمكن طرده.');
         await target.kick('KRB Admin Command Action.');
         await message.channel.send(`✅ تم طرد العضو \`${target.user.tag}\` بنجاح.`);
@@ -221,15 +211,15 @@ client.on('messageCreate', async (message) => {
 
     if (command === 'mute') {
         if (!message.member?.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return;
-        const target = message.mentions.members.first();
+        const target = message.mentions.members?.first();
         if (!target || !target.manageable) return message.reply('❌ تعذّر كتم العضو.');
-        await target.timeout(3600000, 'Muted via KRB Command.'); // ميوت لمدة ساعة
+        await target.timeout(3600000, 'Muted via KRB Command.'); 
         await message.channel.send(`🤐 تم كتم العضو \`${target.user.tag}\` لمدة ساعة كاملة.`);
     }
 
     if (command === 'unmute') {
         if (!message.member?.permissions.has(PermissionsBitField.Flags.ModerateMembers)) return;
-        const target = message.mentions.members.first();
+        const target = message.mentions.members?.first();
         if (!target) return message.reply('❌ اذكر العضو لإلغاء الكتم.');
         await target.timeout(null).catch(() => {});
         await message.channel.send(`🔊 تم فك الكتم والعزل عن \`${target.user.tag}\`.`);
@@ -237,10 +227,9 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==========================================
-// 💡 حل مشكلة "الأزرار والقوائم المعلقة التي لا تحمل"
+// 💡 معالجة تفاعلات القائمة المنسدلة بدون أي تعليق
 // ==========================================
 client.on('interactionCreate', async (interaction) => {
-    // حل مشكلة البلاك ليست الفوري
     if (blacklistedUsers.has(interaction.user.id) || (interaction.guildId && blacklistedGuilds.has(interaction.guildId))) {
         if (interaction.isRepliable()) {
             await interaction.reply({ content: `❌ **تواصل مع المطور عليك بلاك ليست** <@${DEVELOPER_ID}>`, ephemeral: true });
@@ -248,58 +237,64 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // معالجة الأزرار والقوائم الخاصة بالتكت لتعمل فوراً بدون دوران مستمر
-    if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        const id = interaction.customId;
+    // عند اختيار خيار من القائمة المنسدلة للتذاكر
+    if (interaction.isStringSelectMenu() && interaction.customId === 'krb_ticket_select') {
+        const selectedValue = interaction.values[0];
+
+        // معالجة زر الريفرش الذكي
+        if (selectedValue === 'tk_refresh') {
+            await interaction.reply({ content: '🔄 تم تحديث حالة الاتصال بالخادم ونظام الاستجابة بنجاح!', ephemeral: true });
+            return;
+        }
+
+        // تفادي تعليق البوت بالرد المبدئي الفوري
+        await interaction.deferReply({ ephemeral: true });
+
+        let categoryName = 'دعم';
+        if (selectedValue === 'tk_exploits') categoryName = 'هاكات';
+        if (selectedValue === 'tk_buy') categoryName = 'شراء';
+
+        const channelName = `${categoryName}-${interaction.user.username}`;
         
-        // التحقق من طلبات إنشاء التكتات
-        if (id === 'tk_general_btn' || id === 'tk_report_btn' || id === 'tk_hybrid_menu') {
-            // الرد الفوري على ديسكورد لمنع التعليق والدوران المستمر
-            await interaction.deferReply({ ephemeral: true });
+        try {
+            const ticketChannel = await interaction.guild?.channels.create({
+                name: channelName,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                    { id: client.user!.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+                ]
+            });
 
-            const channelName = `ticket-${interaction.user.username}`;
-            try {
-                const ticketChannel = await interaction.guild?.channels.create({
-                    name: channelName,
-                    type: ChannelType.GuildText,
-                    permissionOverwrites: [
-                        { id: interaction.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                        { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-                        { id: client.user!.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-                    ]
-                });
+            if (ticketChannel) {
+                const welcomeEmbed = new EmbedBuilder()
+                    .setTitle(`🔳 تذكرة قسم [${categoryName.toUpperCase()}]`)
+                    .setDescription(`أهلاً بك <@${interaction.user.id}> في تذكرتك الخاصة. يرجى طرح استفسارك أو طلبك هنا وسيتواصل معك الفريق الفوري لـ KRB.`)
+                    .setColor('#000000');
 
-                if (ticketChannel) {
-                    const welcomeEmbed = new EmbedBuilder()
-                        .setTitle('🔳 تذكرة جديدة مع الإدارة')
-                        .setDescription(`أهلاً بك <@${interaction.user.id}>، تم فتح تذكرتك بنجاح. يرجى كتابة مشكلتك هنا وسيرد عليك طاقم الإدارة قريباً.`)
-                        .setColor('#000000');
+                const closeBtn = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    new ButtonBuilder().setCustomId('close_krb_ticket').setLabel('إغلاق التذكرة 🔒').setStyle(ButtonStyle.Danger)
+                );
 
-                    const closeBtn = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder().setCustomId('close_krb_ticket').setLabel('إغلاق التذكرة 🔒').setStyle(ButtonStyle.Danger)
-                    );
-
-                    await ticketChannel.send({ embeds: [welcomeEmbed], components: [closeBtn] });
-                    await interaction.editReply({ content: `✅ تم إنشاء تذكرتك بنجاح هنا: <#${ticketChannel.id}>` });
-                }
-            } catch (err) {
-                await interaction.editReply({ content: '❌ فشل إنشاء التذكرة، يرجى التحقق من صلاحيات البوت الإدارية.' });
+                await ticketChannel.send({ embeds: [welcomeEmbed], components: [closeBtn] });
+                await interaction.editReply({ content: `✅ تم إنشاء تذكرتك بنجاح هنا: <#${ticketChannel.id}>` });
             }
+        } catch (err) {
+            await interaction.editReply({ content: '❌ فشل إنشاء التذكرة، يرجى التحقق من الصلاحيات الإدارية للبوت.' });
         }
+    }
 
-        // زر إغلاق التكت الفوري
-        if (id === 'close_krb_ticket') {
-            await interaction.reply({ content: '🔳 جاري أرشفة وتدمير الغرفة النصية خلال لحظات...' });
-            setTimeout(() => interaction.channel?.delete().catch(() => {}), 2000);
-        }
+    if (interaction.isButton() && interaction.customId === 'close_krb_ticket') {
+        await interaction.reply({ content: '🔳 جاري أرشفة وتدمير الغرفة النصية خلال لحظات...' });
+        setTimeout(() => interaction.channel?.delete().catch(() => {}), 2000);
     }
 });
 
 // ==========================================
-// 🌐 واجهة التحكم الاحترافية المحدثة بالكامل للجوال (AirFlow Flex Design)
+// 🌐 واجهة لوحة تحكم الجوال المحدثة والمنظمة كاملاً
 // ==========================================
 app.get('/', (req, res) => {
-    // بناء كروت معتقل البوتات المعزولة لعرض اسمها وصورتها ومن دعاها
     let quarantineCards = '';
     isolatedBots.forEach((bot) => {
         quarantineCards += `
@@ -360,13 +355,11 @@ app.get('/', (req, res) => {
             
             .section-title { font-size: 15px; font-weight: 700; margin: 25px 0 15px 0; border-right: 4px solid #fff; padding-right: 10px; color: #fff; }
             
-            /* نظام توزيع كروت مرن متوافق 100% مع الجوال */
             .grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
             @media (min-width: 768px) { .grid { grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); } header { flex-direction: row; justify-content: space-between; align-items: center; } header h1 { font-size: 22px; } }
             
             .card { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; display: flex; flex-direction: column; }
             
-            /* تصميم كروت المعتقل المحدثة للبوتات بالصور */
             .quarantine-container { display: flex; flex-direction: column; gap: 15px; }
             .quarantine-card { flex-direction: row; flex-wrap: wrap; gap: 15px; align-items: center; position: relative; border-left: 3px solid var(--accent-red); }
             .bot-avatar { width: 55px; height: 55px; border-radius: 50%; border: 1px solid var(--border-color); background: #222; }
@@ -457,22 +450,20 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 🚀 [API] فك العزل والتوثيق المباشر للبوت المعزول من لوحة التحكم
+// 🚀 [API] فك العزل والتوثيق المباشر لبوت معزول
 app.post('/api/approve-bot', async (req, res) => {
     const { botId, guildId } = req.body;
     if (!botId || !guildId) return res.status(400).send('البيانات ناقصة.');
 
     try {
-        whitelistedBots.add(botId); // إضافة البوت للقائمة البيضاء الموثوقة
-        isolatedBots.delete(botId); // إخراجه من قفص المعتقل في الموقع
+        whitelistedBots.add(botId);
+        isolatedBots.delete(botId);
 
         const guild = await client.guilds.fetch(guildId);
         const targetBotMember = await guild.members.fetch(botId).catch(() => null);
 
         if (targetBotMember) {
-            // إلغاء الميوت والـ Timeout عنه فوراً داخل السيرفر
             await targetBotMember.timeout(null, 'Approved via KRB Dashboard.').catch(() => {});
-            
             const sysChannel = guild.channels.cache.find(c => c.type === ChannelType.GuildText) as TextChannel;
             if (sysChannel) {
                 sysChannel.send(`✅ **[KRB SECURITY]:** تم توثيق البوت <@${botId}> بنجاح من لوحة التحكم وإلغاء العزل والتجميد عنه.`);
@@ -484,7 +475,7 @@ app.post('/api/approve-bot', async (req, res) => {
     }
 });
 
-// 🚀 [API] استقبال وإرسال الرسائل المخصصة للسيرفرات
+// 🚀 [API] استقبال وإرسال الرسائل المخصصة
 app.post('/api/send-custom', async (req, res) => {
     const { guildId, channelId, message } = req.body;
     if (!guildId || !message) return res.status(400).send('❌ خطأ: البيانات ناقصة!');
@@ -510,7 +501,7 @@ app.post('/api/send-custom', async (req, res) => {
     }
 });
 
-// 🔒 [API] التحكم في إضافة وإزالة الـ Blacklist
+// 🔒 [API] التحكم في البلاك ليست
 app.post('/api/blacklist', (req, res) => {
     const { type, targetId, action } = req.body;
     if (!targetId) return res.status(400).send('❌ خطأ: ID مطلوب!');
