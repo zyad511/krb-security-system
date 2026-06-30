@@ -41,7 +41,8 @@ app.post('/api/config/:guildId', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
+// تم التعديل هنا: الـ API يشتغل على 5000 ويترك منفذ 10000 الأساسي للوحة التحكم لمنع التصادم
+const PORT = process.env.API_PORT || 5000;
 app.listen(PORT, () => {
   console.log(`[KRB API] Dashboard backend running on port ${PORT}`);
 });
