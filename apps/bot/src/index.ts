@@ -15,6 +15,7 @@ import {
   AuditLogEvent
 } from 'discord.js';
 import mongoose from 'mongoose';
+import http from 'http';
 
 const client = new Client({
   intents: [
@@ -25,14 +26,28 @@ const client = new Client({
   ]
 });
 
-// محاولة الاتصال بقاعدة البيانات دون جعلها تعطل البوت عند الفشل
+// ==========================================
+// 🌐 خادم ويب مدمج لحل مشكلة الـ 404 في Render
+// ==========================================
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`
+    <body style="background-color:#0b0b0b; color:#ffffff; font-family:sans-serif; display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; margin:0;">
+      <h1 style="border: 2px solid #fff; padding: 20px 40px; letter-spacing: 2px; box-shadow: 0px 0px 15px rgba(255,255,255,0.1);">🔳 KRB SYSTEM | ONLINE</h1>
+      <p style="color: #666; font-size: 14px; margin-top: 10px;">Infrastructure is fully operational and active.</p>
+    </body>
+  `);
+}).listen(PORT, () => console.log(`[KRB WEB] Embedded web server running perfectly on port ${PORT}`));
+
+// ==========================================
+// 🗄️ إعدادات الحماية وقاعدة البيانات
+// ==========================================
 const MONGO_URI = process.env.MONGO_URI || '';
 if (MONGO_URI) {
   mongoose.connect(MONGO_URI)
     .then(() => console.log('[KRB DATABASE] Connected successfully'))
-    .catch((err) => console.error('[KRB DATABASE] Connection skipped/error:', err.message));
-} else {
-  console.log('[KRB DATABASE] No MONGO_URI provided. Running on Safe Memory Mode.');
+    .catch((err) => console.error('[KRB DATABASE] Memory Mode Active:', err.message));
 }
 
 const GuildSchema = new mongoose.Schema({
@@ -46,15 +61,14 @@ const GuildSchema = new mongoose.Schema({
 const GuildConfig = mongoose.models.GuildConfig || mongoose.model('GuildConfig', GuildSchema);
 
 const PREFIX = '.'; 
-const activeBlackjack = new Map<string, { cards: number[], dealer: number[], bet: number }>();
 const spamMap = new Map<string, { count: number, lastMessage: number }>();
 
 client.once('ready', async () => {
-  console.log(`[KRB SYSTEM] ${client.user?.tag} Is Ready & Safe From Hanging.`);
+  console.log(`[KRB SYSTEM] ${client.user?.tag} deployed successfully.`);
   
   const commandsData: any[] = [
     { name: 'help', description: 'عرض لوحة التحكم الكاملة والفخمة لنظام KRB' },
-    { name: 'status', description: 'عرض حالة الأنظمة الأمنية والوايت ليست' },
+    { name: 'status', description: 'عرض حالة الأنزمة الأمنية والوايت ليست' },
     {
       name: 'config',
       description: 'إعداد خيارات التكت والحماية المتقدمة',
@@ -71,12 +85,11 @@ client.once('ready', async () => {
   }
 });
 
-// دالة آمنة لجلب الإعدادات دون تعليق البوت إذا كانت قاعدة البيانات مفصولة
 async function getGuildConfig(guildId: string) {
   const defaultConfig = { guildId, trustedUsers: [], supportRole: '', logChannelId: '', antiNuke: true, antiSpam: true };
-  if (mongoose.connection.readyState !== 1) return defaultConfig; // إذا لم تكن متصلة، خذ الافتراضي فوراً
+  if (mongoose.connection.readyState !== 1) return defaultConfig;
   try {
-    const config = await GuildConfig.findOne({ guildId }).maxTimeMS(1500); // حد أقصى ثانية ونصف للبحث لمنع التعليق
+    const config = await GuildConfig.findOne({ guildId }).maxTimeMS(1500);
     return config || defaultConfig;
   } catch {
     return defaultConfig;
@@ -84,78 +97,31 @@ async function getGuildConfig(guildId: string) {
 }
 
 // ==========================================
-// [1] نظام حماية الدخول (Anti-Bot)
-// ==========================================
-client.on('guildMemberAdd', async (member) => {
-  if (!member.user.bot) return;
-  const config = await getGuildConfig(member.guild.id);
-  if (!config.antiNuke) return;
-
-  try {
-    const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.BotAdd }).catch(() => null);
-    if (!fetchedLogs) return;
-    const botLog = fetchedLogs.entries.first();
-    
-    if (botLog) {
-      const { executor } = botLog;
-      if (executor && executor.id !== member.guild.ownerId && !config.trustedUsers.includes(executor.id)) {
-        await member.kick('KRB Security: Unauthorized bot.').catch(() => {});
-        const executorMember = await member.guild.members.fetch(executor.id).catch(() => null);
-        if (executorMember && executorMember.manageable) {
-          await executorMember.roles.set([]).catch(() => {});
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[KRB] Anti-bot error bypassed:', error);
-  }
-});
-
-// ==========================================
-// [2] معالج الرسائل والنظام الفخم لحظر السبام (.help)
+// 🛠️ أمر إرسال اللوحة وتعديل النصوص الكاملة
 // ==========================================
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  const config = await getGuildConfig(message.guild.id);
-
-  // نظام الـ Anti-Spam التلقائي الذكي
-  if (config.antiSpam && !message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-    const now = Date.now();
-    const userData = spamMap.get(message.author.id) || { count: 0, lastMessage: now };
-
-    if (now - userData.lastMessage < 3000) {
-      userData.count++;
-      if (userData.count > 4) {
-        await message.delete().catch(() => {});
-        await message.member?.timeout(60000, 'KRB Anti-Spam').catch(() => {});
-        return;
-      }
-    } else {
-      userData.count = 1;
-      userData.lastMessage = now;
-    }
-    spamMap.set(message.author.id, userData);
-  }
-
   if (!message.content.startsWith(PREFIX)) return;
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
-  const serverIconUrl = message.guild.iconURL({ extension: 'png', size: 1024 }) || undefined;
+  
+  // جلب رابط أيقونة السيرفر بشكل صحيح ومؤمن ليظهر كصورة Thumbnail دائرية فخمة
+  const serverIconUrl = message.guild.iconURL({ extension: 'png', size: 1024 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
 
-  // أمر تفعيل لوحة التكت الهجينة الفخمة
   if (command === 'ticket-setup') {
     if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
     
+    // 📝 [هنا يمكنك تعديل كافة نصوص اللوحة الرئيسية لـ KRB]
     const embed = new EmbedBuilder()
-      .setAuthor({ name: `${message.guild.name.toUpperCase()} | SYSTEM HUB`, iconURL: serverIconUrl })
+      .setAuthor({ name: `KRB SYSTEM | MANAGEMENT HUB`, iconURL: serverIconUrl })
       .setTitle('🔳 **مـركـز خـدمـات الـسـيـرفـر والـدّعـم الـفـنّـي**')
       .setColor('#000000')
-      .setThumbnail(serverIconUrl || null)
+      .setThumbnail(serverIconUrl)
       .setDescription(
-        `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ Bond\n\n` +
-        `مرحباً بك في المنصة الموحدة لـ **KRB SYSTEM**.\n` +
-        `يمكنك بدء محادثة خاصة ومباشرة مع الإدارة الفنية عبر اختيار الطريقة التي تناسبك أدناه:\n\n` +
+        `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ\n\n` +
+        `مرحباً بك في المنصة الموحدة التابعة لنظام **KRB SYSTEM**.\n` +
+        `يمكنك الآن بدء محادثة خاصة ومباشرة مع الإدارة الفنية عبر اختيار الطريقة المناسبة لك بالأسفل:\n\n` +
         `🔲 **الخيار الأول:** عبر القائمة المنسدلة (Menu)\n` +
         `🔲 **الخيار الثاني:** عبر الأزرار التفاعلية (Buttons)\n\n` +
         `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ`
@@ -181,67 +147,37 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // أمر المساعدة التقليدي للاختبار الفوري للمطورين
   if (command === 'help') {
     const embed = new EmbedBuilder()
-      .setTitle('🔳 KRB SYSTEM LIVE')
-      .setDescription('البوت يعمل بكفاءة مطلقة الآن واستجاب للأمر النصي بنجاح!\nاكتب `.ticket-setup` لإطلاق لوحة التحكم الفخمة بالسيرفر.')
+      .setTitle('🔳 KRB ULTIMATE PANEL')
+      .setDescription('النظام يعمل بكفاءة. اكتب `.ticket-setup` لإطلاق واجهة الدعم الفني الفخمة.')
       .setColor('#000000');
     await message.reply({ embeds: [embed] });
   }
 });
 
 // ==========================================
-// [3] معالج التفاعلات الآمن والمؤمن ضد الـ Timeout (Slash & UI)
+// 🔒 نظام معالجة التكتات، الـ Log، والتدمير الفوري الآمن
 // ==========================================
 client.on('interactionCreate', async (interaction: Interaction) => {
   if (!interaction.guild || !interaction.isRepliable()) return;
 
   const config = await getGuildConfig(interaction.guild.id);
-  const serverIconUrl = interaction.guild.iconURL({ extension: 'png', size: 1024 }) || undefined;
+  const serverIconUrl = interaction.guild.iconURL({ extension: 'png', size: 1024 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
 
-  // حل مشكلة "The application did not respond" عبر عمل deferReply فوراً لكل أوامر الـ Slash
+  // معالجة أوامر السلاش الإعدادية
   if (interaction.isChatInputCommand()) {
-    await interaction.deferReply().catch(() => {});
-    const { commandName } = interaction;
-
-    if (commandName === 'help') {
-      const embed = new EmbedBuilder()
-        .setTitle('🔳 KRB ULTIMATE PANEL')
-        .setDescription('النظام يعمل بالكامل. استخدم البادئة النصية `.` واكتب `.ticket-setup` لإنشاء روم الدعم الفني الفخم.')
-        .setColor('#000000');
-      await interaction.editReply({ embeds: [embed] });
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+    if (interaction.commandName === 'help') {
+      await interaction.editReply({ content: '🔳 نظام KRB نشط بالكامل. اكتب التوجيه النصي `.ticket-setup` لتشغيل اللوحة الهجينة.' });
     }
-
-    if (commandName === 'status') {
-      await interaction.editReply({ content: `🛡️ **[KRB SECURITY]:** أنظمة الحماية الحية والوايت ليست تعمل حالياً في الذاكرة الآمنة.` });
-    }
-
-    if (commandName === 'config') {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-        return interaction.editReply({ content: '❌ لا تملك صلاحيات كافية.' });
-      }
-      const logChannel = interaction.options.getChannel('logs');
-      const role = interaction.options.getRole('role');
-      const trustUser = interaction.options.getString('trust');
-
-      if (mongoose.connection.readyState === 1) {
-        const dbConfig = await GuildConfig.findOne({ guildId: interaction.guild.id });
-        if (dbConfig) {
-          if (logChannel) dbConfig.logChannelId = logChannel.id;
-          if (role) dbConfig.supportRole = role.id;
-          if (trustUser) dbConfig.trustedUsers.push(trustUser);
-          await dbConfig.save();
-        }
-        await interaction.editReply({ content: '✅ **[KRB CONFIG]:** تم تحديث الإعدادات الفخمة بنجاح في قاعدة البيانات.' });
-      } else {
-        await interaction.editReply({ content: '⚠️ قاعدة البيانات غير متصلة حالياً (تأكد من إعداد بيئة المونقو في Render)، البوت يعتمد الإعدادات الافتراضية حالياً لتجنب التعليق.' });
-      }
+    if (interaction.commandName === 'status') {
+      await interaction.editReply({ content: '🛡️ جميع خوارزميات KRB الحية تعمل في بيئة التشغيل المستقرة حالياً.' });
     }
     return;
   }
 
-  // دالة إنشاء غرف التكت التفاعلية
+  // دالة إنشاء التكت الآمنة مع جلب الصورة الفخمة
   const createTicket = async (typeLabel: string) => {
     await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
@@ -251,29 +187,42 @@ client.on('interactionCreate', async (interaction: Interaction) => {
       permissionOverwrites: [
         { id: interaction.guild!.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
         { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] },
-        { id: client.user!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] }
+        { id: client.user!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.ManageChannels] }
       ]
-    });
+    }).catch(() => null);
+
+    if (!ticketChannel) {
+      return interaction.editReply({ content: '❌ فشل إنشاء الغرفة. تأكد من إعطاء البوت صلاحية `Manage Channels` وصلاحيات كاملة للرتبة الخاصة به.' });
+    }
 
     const mentionRole = config.supportRole ? `<@&${config.supportRole}>` : '@here';
 
+    // 📝 [هنا نصوص غرف التواصل المغلقة من الداخل]
     const insideEmbed = new EmbedBuilder()
       .setAuthor({ name: 'KRB MANAGEMENT SYSTEM', iconURL: serverIconUrl })
       .setTitle('🔳 **غرفة تواصل مغلقة ونشطة**')
+      .setThumbnail(serverIconUrl)
       .setColor('#000000')
-      .setDescription(`مرحباً بك <@${interaction.user.id}> في قسم الـ **${typeLabel.replace('-', ' ')}**.\nيرجى كتابة طلبك بوضوح وسيرد عليك الكادر الإداري فوراً.`);
+      .setDescription(
+        `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ\n\n` +
+        `مرحباً بك <@${interaction.user.id}> في قسم الـ **${typeLabel.replace('-', ' ')}**.\n` +
+        `تم استدعاء طاقم المسؤولين لمراجعة طلبك ومساعدتك فوراً.\n\n` +
+        `يرجى كتابة مشكلتك بالتفصيل هنا وسيقوم المسؤول بالرد عليك قريباً.\n\n` +
+        `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ`
+      )
+      .setFooter({ text: 'اضغط على الزر الأسود بالأسفل لإنهاء المحادثة وتدمير الروم' });
 
     const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId('close_hybrid_ticket').setLabel('إغلاق وحفظ التكت 🔒').setStyle(ButtonStyle.Secondary)
     );
 
     await ticketChannel.send({ 
-      content: `👤 **مفتوح بواسطة:** <@${interaction.user.id}> | 🔔 **إلى:** ${mentionRole}`, 
+      content: `👤 **مفتوح بواسطة:** <@${interaction.user.id}> | 🔔 **طاقم العمل:** ${mentionRole}`, 
       embeds: [insideEmbed], 
       components: [closeRow] 
     });
 
-    await interaction.editReply({ content: `✅ تم إنشاء تذكرتك بنجاح: <#${ticketChannel.id}>` });
+    await interaction.editReply({ content: `✅ تم إنشاء تذكرتك الفخمة بنجاح، تفضل هنا: <#${ticketChannel.id}>` });
   };
 
   if (interaction.isStringSelectMenu() && interaction.customId === 'tk_hybrid_menu') {
@@ -286,36 +235,51 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     if (cid === 'tk_general_btn') await createTicket('دعم-عام');
     if (cid === 'tk_report_btn') await createTicket('بلاغ-سري');
 
+    // 🔒 كود الإغلاق الذكي والتدمير السريع (مؤمن ضد التعليق)
     if (cid === 'close_hybrid_ticket') {
-      await interaction.deferReply().catch(() => {});
       const channel = interaction.channel as TextChannel;
+      
+      // الرد المبدئي السريع لتجنب تعليق الديسكورد
+      await interaction.reply({ content: '🔳 **[KRB SYSTEM]:** جاري استخراج النص وتدمير القناة فوراً...' }).catch(() => {});
 
-      const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-      let transcriptText = `KRB TICKET LOG\n----------------------------------------\n\n`;
+      try {
+        const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+        let transcriptText = `KRB TICKET LOG TRANSCRIPT\n----------------------------------------\n\n`;
 
-      if (messages) {
-        Array.from(messages.values()).reverse().forEach(msg => {
-          transcriptText += `[${msg.createdAt.toLocaleString()}] ${msg.author.tag}: ${msg.content}\n`;
-        });
-      }
-
-      const buffer = Buffer.from(transcriptText, 'utf-8');
-      const attachment = new AttachmentBuilder(buffer, { name: `transcript-${channel.name}.txt` });
-
-      if (config.logChannelId) {
-        const logChannel = interaction.guild.channels.cache.get(config.logChannelId) as TextChannel;
-        if (logChannel) {
-          await logChannel.send({ content: `🔒 تم غلق تكت \`${channel.name}\``, files: [attachment] }).catch(() => {});
+        if (messages) {
+          Array.from(messages.values()).reverse().forEach(msg => {
+            transcriptText += `[${msg.createdAt.toLocaleString()}] ${msg.author.tag}: ${msg.content}\n`;
+          });
         }
+
+        const buffer = Buffer.from(transcriptText, 'utf-8');
+        const attachment = new AttachmentBuilder(buffer, { name: `transcript-${channel.name}.txt` });
+
+        // التحقق من إرسال السجل لقناة الـ Log إذا كانت مهيأة
+        if (config.logChannelId) {
+          const logChannel = interaction.guild.channels.cache.get(config.logChannelId) as TextChannel;
+          if (logChannel) {
+            await logChannel.send({ 
+              content: `🔒 **تم غلق وتدمير تكت بنجاح:** \`${channel.name}\` بواسطة <@${interaction.user.id}>`, 
+              files: [attachment] 
+            }).catch(() => {});
+          }
+        }
+      } catch (logError) {
+        console.log('[KRB LOG BYPASS] Logging skipped or failed, moving to deletion.');
       }
 
-      await interaction.editReply('🔳 **[KRB SYSTEM]:** تم حفظ السجل. سيتم تدمير الغرفة الآن...');
-      setTimeout(() => channel.delete().catch(() => {}), 3000);
+      // 💥 تنفيذ عملية حذف القناة فوراً ودون انتظار طويل لمنع التعليق
+      setTimeout(async () => {
+        await channel.delete().catch((err) => {
+          console.error('[KRB ERROR] Could not delete channel, missing Manage Channels permission:', err.message);
+        });
+      }, 1500);
     }
   }
 });
 
-process.on('unhandledRejection', (reason) => console.error('[KRB CRASH] Caught:', reason));
-process.on('uncaughtException', (err) => console.error('[KRB CRASH] Caught:', err));
+process.on('unhandledRejection', (reason) => console.error('[KRB CRASH] Handled:', reason));
+process.on('uncaughtException', (err) => console.error('[KRB CRASH] Handled:', err));
 
 client.login(process.env.DISCORD_TOKEN);
