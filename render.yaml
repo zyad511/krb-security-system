@@ -1,11 +1,11 @@
 services:
-  # خادم الـ API والـ WebSockets
+  # 1. خادم الـ API الرئيسي
   - type: web
     name: krb-security-api
     env: node
     plan: starter
-    buildCommand: npm install && npm run build --prefix apps/api
-    startCommand: npm run start --prefix apps/api
+    buildCommand: npm install && npm run build:api
+    startCommand: npm run start:api
     envVars:
       - key: MONGO_URI
         fromDatabase:
@@ -16,16 +16,16 @@ services:
           name: krb-security-cache
           property: connectionString
 
-  # بوت الديسكورد (عامل خلفية مستقل)
+  # 2. عامل تشغيل البوت المباشر (Worker Node)
   - type: worker
     name: krb-security-bot
     env: node
     plan: starter
-    buildCommand: npm install && npm run build --prefix apps/bot
-    startCommand: npm run start --prefix apps/bot
+    buildCommand: npm install && npm run build:bot
+    startCommand: npm run start:bot
     envVars:
       - key: DISCORD_TOKEN
-        sync: false # يتم وضعه يدوياً في لوحة تحكم Render لحماية المفتاح
+        sync: false
       - key: MONGO_URI
         fromDatabase:
           name: krb-security-db
