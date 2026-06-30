@@ -304,18 +304,38 @@ app.get('/', (req, res) => {
         <div class="grid">
             <div class="card">
                 <form action="/api/send-custom" method="POST">
-                    <label>معرف السيرفر المستهدف (Guild ID) *</label>
-                    <input type="text" name="guildId" required placeholder="اترك الحقل فارغاً إذا كنت تريد الإرسال للكل...">
-                    <label>نوع الإرسال</label>
-                    <select name="sendType">
-                        <option value="single">سيرفر محدد فقط (باستخدام الـ ID أعلاه)</option>
-                        <option value="all">إرسال شامل لجميع السيرفرات (Broadcast) 📢</option>
+                    <label>نوع الإرسال المطلوب</label>
+                    <select name="sendType" id="sendTypeSelect" onchange="toggleGuildInput()">
+                        <option value="all">📢 إرسال شامل لجميع السيرفرات (Broadcast)</option>
+                        <option value="single">📌 سيرفر محدد فقط (يتطلب كتابة الـ ID بالأسفل)</option>
                     </select>
+                    
+                    <div id="guildIdContainer" style="display: none;">
+                        <label>معرف السيرفر المستهدف (Guild ID) *</label>
+                        <input type="text" name="guildId" id="guildIdField">
+                    </div>
+                    
                     <label>نص الرسالة أو الإعلان الإداري</label>
                     <textarea name="message" rows="3" required placeholder="اكتب هنا..."></textarea>
                     <button type="submit" class="btn">إطلق الإرسال الفوري 🚀</button>
                 </form>
             </div>
+
+            <script>
+                function toggleGuildInput() {
+                    const select = document.getElementById('sendTypeSelect');
+                    const container = document.getElementById('guildIdContainer');
+                    const field = document.getElementById('guildIdField');
+                    if (select.value === 'single') {
+                        container.style.display = 'block';
+                        field.required = true;
+                    } else {
+                        container.style.display = 'none';
+                        field.required = false;
+                        field.value = '';
+                    }
+                }
+            </script>
 
             <div class="card">
                 <form action="/api/blacklist" method="POST">
@@ -445,7 +465,7 @@ app.post('/api/approve-bot', async (req, res) => {
     } catch (error: any) { res.status(500).send(error.message); }
 });
 
-// 🚀 دالة الإرسال المحدثة بنظامين (سيرفر محدد أو إرسال جماعي للكل بنفس الدالة القديمة السريعة)
+// 🚀 نظام التحكم بالإرسال المطور والمباشر
 app.post('/api/send-custom', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     const sessionId = cookies['krb_session'];
@@ -455,7 +475,7 @@ app.post('/api/send-custom', async (req, res) => {
 
     const { guildId, sendType, message } = req.body;
 
-    // الخيار الأول: الإرسال الشامل لكل السيرفرات المتصل بها البوت
+    // 1. خيار الإرسال الشامل (لا يتطلب آيدي سيرفر)
     if (sendType === 'all') {
         let successCount = 0;
         client.guilds.cache.forEach((guild) => {
@@ -465,21 +485,20 @@ app.post('/api/send-custom', async (req, res) => {
                 successCount++;
             }
         });
-        return res.send(`<script>alert("📢 تم إطلاق الإرسال الشامل بنجاح إلى ${successCount} سيرفر!"); window.location.href="/";</script>`);
+        return res.send(`<script>alert("📢 تم إطلاق الإرسال الشامل بنجاح إلى ${successCount} سيرفر بدون الحاجة لتحديد ID!"); window.location.href="/";</script>`);
     }
 
-    // الخيار الثاني: نظام الإرسال القديم المباشر لسيرفر واحد عن طريق الـ ID
-    if (!guildId) return res.status(400).send('الرجاء كتابة معرف السيرفر (Guild ID) للإرسال الفردي.');
+    // 2. خيار السيرفر المحدد (يتطلب آيدي سيرفر)
+    if (!guildId) return res.status(400).send('خطأ: يجب كتابة معرف السيرفر (Guild ID) عند اختيار إرسال لسيرفر محدد.');
     
     try {
         const guild = await client.guilds.fetch(guildId);
-        // تم إرجاع الطريقة القديمة الفورية للبحث عن أول قناة نصية وإرسال الرسالة لها مباشرة
         const targetChannel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
         
-        if (!targetChannel) return res.status(400).send('تعذر العثور على قناة نصية يمتلك البوت صلاحية الكتابة فيها داخل هذا السيرفر.');
+        if (!targetChannel) return res.status(400).send('تعذر العثور على قناة نصية مقبولة داخل هذا السيرفر.');
         
         await targetChannel.send(message);
-        res.send(`<script>alert("🚀 تم إرسال الرسالة الفردية بنجاح!"); window.location.href="/";</script>`);
+        res.send(`<script>alert("🚀 تم إرسال الرسالة المباشرة بنجاح!"); window.location.href="/";</script>`);
     } catch (error: any) { 
         res.status(500).send(`فشل الإرسال: ${error.message}`); 
     }
