@@ -31,7 +31,7 @@ const client = new Client({
 // ==========================================
 // 🛡️ الإعدادات الأمنية العليا لـ KRB
 // ==========================================
-const SUPREME_OWNER_ID = '1065985362658345040'; // هويتك المحمية
+const SUPREME_OWNER_ID = '1065985362658345040'; // هويتك الشخصية المحمية
 const PREFIX = '.';
 
 const whitelistedBots = new Set<string>(); 
@@ -44,7 +44,7 @@ if (MONGO_URI) {
 }
 
 // ==========================================
-// 🌐 لوحة التحكم (KRB Dashboard) مع ميزة فك العزل تلقائياً
+// 🌐 لوحة التحكم (KRB Dashboard)
 // ==========================================
 const PORT = process.env.PORT || 3000;
 
@@ -90,13 +90,11 @@ http.createServer(async (req, res) => {
         if (botId) {
           whitelistedBots.add(botId);
           
-          // البحث عن البوت في السيرفرات وفك العزل والـ Timeout عنه فوراً
           client.guilds.cache.forEach(async (guild) => {
             const isolatedBot = await guild.members.fetch(botId).catch(() => null);
             if (isolatedBot && isolatedBot.communicationDisabledUntilTimestamp) {
               await isolatedBot.timeout(null, 'KRB Web: Approved and activated by owner.').catch(() => {});
               
-              // إرسال رسالة ترحيب للبوت بعد تفعيله
               const sysChannel = guild.channels.cache.find(c => c.type === ChannelType.GuildText) as TextChannel;
               if (sysChannel) {
                 sysChannel.send(`✅ **[KRB SECURITY]:** تم تفعيل البوت <@${botId}> بنجاح من لوحة التحكم وإلغاء العزل عنه.`);
@@ -112,7 +110,6 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // الواجهة الرسومية الفخمة باللون الأسود والأبيض (AirFlow Style)
   if (url === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 
@@ -209,23 +206,19 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => console.log(`[KRB INTERFACE] Dynamic Dashboard Running Perfect.`));
 
 // ==========================================
-// ⚡ خوارزمية العزل التام للبوتات غير المصرحة (سوح + Timeout)
+// ⚡ خوارزمية العزل التام للبوتات غير المصرحة
 // ==========================================
 client.on('guildMemberAdd', async (member) => {
-  if (!member.user.bot) return; // البشر يدخلون بشكل طبيعي
+  if (!member.user.bot) return;
 
-  // إذا كان بوت غير موثق من الموقع
   if (!whitelistedBots.has(member.user.id)) {
     try {
-      // 1. تجريد كامل وسحب كافة الرتب (يخليه سوح)
       if (member.manageable) {
         await member.roles.set([]).catch(() => {});
       }
 
-      // 2. تطبيق عزل تام وميوت شامل (Timeout) لأقصى مدة مسموحة بالديسكورد (28 يوم) لمنعه من إرسال أي رسالة أو رؤية قنوات
       await member.timeout(2419200000, 'KRB Security: Unapproved bot isolated completely.').catch(() => {});
 
-      // 3. إرسال تنبيه في قنوات الشات للإدارة
       const systemChannel = member.guild.channels.cache.find(c => c.type === ChannelType.GuildText) as TextChannel;
       if (systemChannel) {
         const alert = new EmbedBuilder()
@@ -265,21 +258,24 @@ async function handleNukeDetection(guildId: string, executorId: string, actionTy
   nukeTracker.set(executorId, trackingData);
 }
 
+// تم حل مشكلة نوع البيانات (Type Guard) هنا لحل خطأ الـ Build النهائي بسلام
 client.on('channelDelete', async (channel) => {
-  if (!channel.guild) return;
+  if (!('guild' in channel) || !channel.guild) return;
+  const targetGuild = channel.guild;
   try {
-    const auditLogs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete }).catch(() => null);
+    const auditLogs = await targetGuild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete }).catch(() => null);
     const entry = auditLogs?.entries.first();
-    if (entry?.executor) await handleNukeDetection(channel.guild.id, entry.executor.id, 'deletion');
+    if (entry?.executor) await handleNukeDetection(targetGuild.id, entry.executor.id, 'deletion');
   } catch {}
 });
 
 client.on('channelCreate', async (channel) => {
-  if (!channel.guild) return;
+  if (!('guild' in channel) || !channel.guild) return;
+  const targetGuild = channel.guild;
   try {
-    const auditLogs = await channel.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate }).catch(() => null);
+    const auditLogs = await targetGuild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelCreate }).catch(() => null);
     const entry = auditLogs?.entries.first();
-    if (entry?.executor) await handleNukeDetection(channel.guild.id, entry.executor.id, 'creation');
+    if (entry?.executor) await handleNukeDetection(targetGuild.id, entry.executor.id, 'creation');
   } catch {}
 });
 
