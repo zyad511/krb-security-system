@@ -465,7 +465,7 @@ app.post('/api/approve-bot', async (req, res) => {
     } catch (error: any) { res.status(500).send(error.message); }
 });
 
-// 🚀 نظام التحكم بالإرسال المطور والمباشر
+// 🚀 تم تعديل الدالة هنا بنظام معالجة (Async Loop) مدعوم بـ await لضمان الإرسال لجميع السيرفرات دون توقف
 app.post('/api/send-custom', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     const sessionId = cookies['krb_session'];
@@ -475,32 +475,46 @@ app.post('/api/send-custom', async (req, res) => {
 
     const { guildId, sendType, message } = req.body;
 
-    // 1. خيار الإرسال الشامل (لا يتطلب آيدي سيرفر)
+    // 1. خيار الإرسال الشامل (Broadcast) لجميع السيرفرات بالترتيب
     if (sendType === 'all') {
         let successCount = 0;
-        client.guilds.cache.forEach((guild) => {
-            const targetChannel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
-            if (targetChannel) {
-                targetChannel.send(message).catch(() => {});
-                successCount++;
+        const guilds = Array.from(client.guilds.cache.values());
+
+        // استخدام loop تقليدي داعم للـ await لمنع سقوط ديسكورد أو تجاوز السيرفرات
+        for (const guild of guilds) {
+            try {
+                const targetChannel = guild.channels.cache.find(ch => 
+                    ch.isTextBased() && 
+                    ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)
+                ) as TextChannel;
+
+                if (targetChannel) {
+                    await targetChannel.send(message);
+                    successCount++;
+                }
+            } catch (guildError) {
+                console.error(`تعذر الإرسال لسيرفر: ${guild.name} (${guild.id})`);
             }
-        });
-        return res.send(`<script>alert("📢 تم إطلاق الإرسال الشامل بنجاح إلى ${successCount} سيرفر بدون الحاجة لتحديد ID!"); window.location.href="/";</script>`);
+        }
+        return res.send(`<script>alert("📢 تم إطلاق الإرسال الشامل بنجاح إلى ${successCount} سيرفر بالكامل دون تجاهل!"); window.location.href="/";</script>`);
     }
 
-    // 2. خيار السيرفر المحدد (يتطلب آيدي سيرفر)
+    // 2. خيار السيرفر المباشر الفردي
     if (!guildId) return res.status(400).send('خطأ: يجب كتابة معرف السيرفر (Guild ID) عند اختيار إرسال لسيرفر محدد.');
     
     try {
         const guild = await client.guilds.fetch(guildId);
-        const targetChannel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
+        const targetChannel = guild.channels.cache.find(ch => 
+            ch.isTextBased() && 
+            ch.permissionsFor(guild.members.me!)?.has(PermissionsBitField.Flags.SendMessages)
+        ) as TextChannel;
         
         if (!targetChannel) return res.status(400).send('تعذر العثور على قناة نصية مقبولة داخل هذا السيرفر.');
         
         await targetChannel.send(message);
         res.send(`<script>alert("🚀 تم إرسال الرسالة المباشرة بنجاح!"); window.location.href="/";</script>`);
     } catch (error: any) { 
-        res.status(500).send(`فشل الإرسال: ${error.message}`); 
+        res.status(500).send(`فشل الإرسال الفردي: ${error.message}`); 
     }
 });
 
