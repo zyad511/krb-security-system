@@ -18,7 +18,8 @@ import mongoose from 'mongoose';
 import http from 'http';
 import querystring from 'querystring';
 
-const client = new Client({
+// 🌟 تم إضافة export هنا ليقرأها ملف الأحداث
+export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -31,13 +32,15 @@ const client = new Client({
 // ==========================================
 // 🛡️ الإعدادات الأمنية العليا لـ KRB
 // ==========================================
-const SUPREME_OWNER_ID = '1065985362658345040'; // هويتك الشخصية المحمية
+// 🌟 تم إضافة export هنا أيضاً
+export const SUPREME_OWNER_ID = '1065985362658345040'; 
 const PREFIX = '.';
 
-const whitelistedBots = new Set<string>(); 
+// 🌟 تم إضافة export هنا لتعديل الـ Whitelist من الأزرار مباشرة
+export const whitelistedBots = new Set<string>(); 
 const nukeTracker = new Map<string, { count: number; lastAction: number }>();
 
-// الاتصال الاختياري بالمونقو
+// 🔗 الاتصال الاختياري بالمونقو
 const MONGO_URI = process.env.MONGO_URI || '';
 if (MONGO_URI) {
   mongoose.connect(MONGO_URI).catch(() => console.log('[KRB] Running in Secure Memory Mode.'));
@@ -258,7 +261,6 @@ async function handleNukeDetection(guildId: string, executorId: string, actionTy
   nukeTracker.set(executorId, trackingData);
 }
 
-// تم حل مشكلة نوع البيانات (Type Guard) هنا لحل خطأ الـ Build النهائي بسلام
 client.on('channelDelete', async (channel) => {
   if (!('guild' in channel) || !channel.guild) return;
   const targetGuild = channel.guild;
@@ -339,4 +341,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 });
 
 process.on('unhandledRejection', () => {});
+
+// 🌟 تشغيل وربط ملف الأحداث الخارجي بشكل محلي سليم ومضمون
+import './events/interactionCreate';
+
 client.login(process.env.DISCORD_TOKEN);
