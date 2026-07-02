@@ -1,21 +1,7 @@
-import { 
-  Client, 
-  GatewayIntentBits, 
-  EmbedBuilder, 
-  PermissionFlagsBits, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
-  StringSelectMenuBuilder, 
-  ChannelType,
-  TextChannel,
-  AuditLogEvent
-} from 'discord.js';
+import { Client, GatewayIntentBits, AuditLogEvent } from 'discord.js';
 import mongoose from 'mongoose';
-import http from 'http';
-import querystring from 'querystring';
 
-// 🔑 الـ export هنا ضروري عشان يقرأه الملف الثاني وما يفشل الـ Build
+// 🔑 تصدير الـ Client عشان يقرأه ملف السيرفر وملف الأحداث بدون أخطاء Build
 export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -28,46 +14,17 @@ export const client = new Client({
 
 export const SUPREME_OWNER_ID = '1065985362658345040'; 
 export const whitelistedBots = new Set<string>(); 
-
 const PREFIX = '.';
+
 const nukeTracker = new Map<string, { count: number; lastAction: number }>();
 const spamTracker = new Map<string, { count: number; lastMessage: number }>();
 
 const MONGO_URI = process.env.MONGO_URI || '';
 if (MONGO_URI) {
-  mongoose.connect(MONGO_URI).catch(() => console.log('[KRB] Secure Memory Mode.'));
+  mongoose.connect(MONGO_URI).catch(() => console.log('[KRB] Secure Memory Mode active.'));
 }
 
-// 🌐 لوحة التحكم (Dashboard) لـ Render
-const PORT = process.env.PORT || 3000;
-http.createServer(async (req, res) => {
-  const url = req.url || '';
-  if (req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
-    req.on('end', async () => {
-      const postData = querystring.parse(body);
-      if (url === '/api/broadcast' && postData.message) {
-        client.guilds.cache.forEach(guild => {
-          const ch = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me!).has(PermissionFlagsBits.SendMessages)) as TextChannel;
-          if (ch) ch.send({ embeds: [new EmbedBuilder().setDescription(postData.message as string).setColor('#000000')] }).catch(() => {});
-        });
-      }
-      if (url === '/api/whitelist' && postData.botId) {
-        whitelistedBots.add(postData.botId as string);
-      }
-      res.writeHead(302, { 'Location': '/' });
-      res.end();
-    });
-    return;
-  }
-  if (url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><title>KRB PANEL</title></head><body style="background:#000;color:#fff;padding:30px;"><h1>🔳 لوحة تحكم KRB النشطة</h1></body></html>`);
-  }
-}).listen(PORT);
-
-// ⚡ حماية البوتات الدخيلة (عزل تلقائي)
+// ⚡ نظام عزل وحماية السيرفر من البوتات
 client.on('guildMemberAdd', async (member) => {
   if (!member.user.bot) return;
   if (!whitelistedBots.has(member.user.id)) {
@@ -100,11 +57,11 @@ client.on('channelDelete', async (c) => {
   }
 });
 
-// 💬 الأنتي سبام + أمر الـ help والـ ticket-setup
+// 💬 نظام الـ Anti-Spam والأوامر المفتوحة للجميع
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // نظام الـ Anti-Spam الشغال تلقائياً
+  // السبام شغال تلقائي ويمسح ويعزل العضو العادي بدون قيود
   const now = Date.now();
   const userData = spamTracker.get(message.author.id) || { count: 0, lastMessage: now };
   if (now - userData.lastMessage < 3000) {
@@ -130,9 +87,10 @@ client.on('messageCreate', async (message) => {
   }
 
   if (command === 'ticket-setup') {
+    const { EmbedBuilder, StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
     const embed = new EmbedBuilder()
       .setAuthor({ name: `KRB SYSTEM`, iconURL: icon })
-      .setTitle('🔳 **مـركـز الـدّعـم الـفـنّـي والـخـدمـات**')
+      .setTitle('🔳 **مـركـز الـدّعـم الـفـنّـي والـخـخدمات**')
       .setColor('#000000')
       .setDescription('اختر القسم المطلوب من الأسفل لفتح تذكرة جديدة للتواصل مع الإدارة:');
 
@@ -144,8 +102,8 @@ client.on('messageCreate', async (message) => {
         { label: 'قسم الشكاوى', value: 'report', emoji: '🛡️' }
       ]);
 
-    const rowMenu = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
-    const rowButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    const rowMenu = new ActionRowBuilder().addComponents(menu);
+    const rowButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('tk_general_btn').setLabel('الدعم التقني 🛠️').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('tk_report_btn').setLabel('تقديم بلاغ 🛡️').setStyle(ButtonStyle.Danger)
     );
@@ -155,4 +113,8 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+// 🔗 استدعاء ملف السيرفر وملف التفاعلات لربط المشروع بالكامل
+import './server';
 import './events/interactionCreate';
+
+client.login(process.env.DISCORD_TOKEN);
