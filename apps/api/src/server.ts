@@ -125,7 +125,6 @@ client.once('ready', async () => {
     console.log(`🔄 KRB CORE SYSTEM RESET INITIATED...`);
     console.log(`🤖 BOT IDENTITY RUNNING AS: ${client.user?.tag}`);
     
-    // الاتصال بـ Mongo وشحن البيانات
     await connectAndLoadDB();
     
     isolatedBots.clear();
@@ -137,7 +136,7 @@ client.once('ready', async () => {
 });
 
 // ==========================================
-// 💬 نظام الأوامر النصية المقتصر على المساعدة (.help)
+// 💬 نظام الأوامر النصية (.help)
 // ==========================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
@@ -162,17 +161,23 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==========================================
-// 🛡️ رادار رصد وعزل البوتات مع نظام مكافحة التخريب (Anti-Grief)
+// 🛡️ رادار رصد وطرد البوتات الفوري مع تتبع ذكي بالكونسول
 // ==========================================
 client.on('guildMemberAdd', async (member) => {
     if (!member.user.bot) return;
+
+    console.log(`\n🚨 [KRB RADAR] تم رصد دخول بوت جديد للسيرفر: [ ${member.user.tag} ] | ID: ${member.id}`);
+
     if (db.blacklistedGuilds.includes(member.guild.id)) {
+        console.log(`⚠️ السيرفر الحالي مدرج في البلاك ليست العالمي، البوت مغادر الآن...`);
         return await member.guild.leave().catch(() => {});
     }
 
+    // إذا كان البوت غير مدرج في قائمة الوايت ليست الآمنة
     if (!db.whitelistedBots.includes(member.user.id)) {
+        console.log(`⚠️ البوت غير مصرح له بالدخول (Not Whitelisted). بدء بروتوكول الطرد الفوري...`);
+        
         try {
-            const hasAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
             let inviterId = "";
             let inviterTag = "غير معروف";
             
@@ -182,9 +187,10 @@ client.on('guildMemberAdd', async (member) => {
                 if (logEntry && logEntry.target?.id === member.id && logEntry.executor) {
                     inviterId = logEntry.executor.id;
                     inviterTag = `${logEntry.executor.tag} (\`${logEntry.executor.id}\`)`;
+                    console.log(`👤 الشخص الذي قام بدعوة البوت: ${inviterTag}`);
                 }
             } catch {
-                console.log("تعذر فحص الـ Audit Log.");
+                console.log("❌ تنبيه: تعذر فحص الـ Audit Log (قد يفتقر البوت لصلاحية View Audit Log).");
             }
 
             if (!db.guildConfigs[member.guild.id]) {
@@ -197,7 +203,7 @@ client.on('guildMemberAdd', async (member) => {
                 logChannel = member.guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(member.guild.members.me!).has(PermissionsBitField.Flags.SendMessages)) as TextChannel;
             }
 
-            // نظام مكافحة التخريب (Anti-Grief)
+            // نظام مكافحة التخريب السريع (Anti-Grief)
             if (inviterId && inviterId !== DEVELOPER_ID) {
                 const now = Date.now();
                 if (!inviteTracker.has(inviterId)) inviteTracker.set(inviterId, []);
@@ -208,11 +214,14 @@ client.on('guildMemberAdd', async (member) => {
                 inviteTracker.set(inviterId, recentInvites);
 
                 if (recentInvites.length > 2) {
+                    console.log(`🚨 [Mass Raid Detected] تم رصد محاولة إغراق سيرفر ببوتات من قبل: ${inviterId}. جاري حظره عالمياً...`);
                     if (!db.blacklistedUsers.includes(inviterId)) {
                         db.blacklistedUsers.push(inviterId);
                         await saveDB();
                     }
-                    if (member.kickable) await member.kick('KRB Anti-Grief: Mass bot invite raid detected.');
+                    if (member.kickable) {
+                        await member.kick('KRB Anti-Grief: Mass bot invite raid detected.');
+                    }
                     
                     if (logChannel) {
                         const griefEmbed = new EmbedBuilder()
@@ -229,58 +238,52 @@ client.on('guildMemberAdd', async (member) => {
                 }
             }
 
-            isolatedBots.set(member.id, {
-                id: member.id,
-                tag: member.user.tag,
-                avatar: member.user.displayAvatarURL({ extension: 'png' }),
-                invitedBy: inviterTag,
-                guildId: member.guild.id,
-                guildName: member.guild.name
-            });
+            // طباعة حالة الطرد في الكونسول لمعرفة ما إذا كان الديسكورد يرفض الصلاحية
+            console.log(`🔍 فحص الصلاحية الهرمية -> هل البوت KRB قادر على طرده؟ (member.kickable): ${member.kickable}`);
 
-            if (hasAdmin) {
-                if (member.kickable) {
-                    await member.kick('KRB Security: Unwhitelisted admin bot.');
-                    if (logChannel) {
-                        const embed = new EmbedBuilder()
-                            .setTitle('🚨 تم إحباط تهديد أدمن خطير')
-                            .setDescription(`حاول بوت غير مصرح به الدخول بصلاحيات مسؤول وتم طرده فوراً لحماية السيرفر من السرقة والتخريب.`)
-                            .addFields(
-                                { name: '🤖 البوت التخريبي', value: `\`${member.user.tag}\``, inline: true },
-                                { name: '👤 المسؤول عن دعوته', value: `${inviterTag}`, inline: true }
-                            )
-                            .setColor('#ef4444');
-                        logChannel.send({ embeds: [embed] });
-                    }
-                }
-            } else {
-                if (member.manageable) await member.roles.set([]).catch(() => {});
-                await member.timeout(2419200000, 'KRB Isolation').catch(() => {});
+            if (member.kickable) {
+                await member.kick('KRB Security: Unwhitelisted bot kicked instantly.');
+                console.log(`✅ تم طرد البوت بنجاح من السيرفر [ ${member.user.tag} ]`);
 
                 if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('🔳 نظام الحجب والعزل التلقائي | KRB SECURITY')
-                        .setDescription(`تم رصد وعزل بوت غير موثق داخل أسوار السيرفر بنجاح، بانتظار قرار الإدارة العليا.`)
+                    const kickEmbed = new EmbedBuilder()
+                        .setTitle('🚨 تم إحباط تهديد وطرد البوت تلقائياً')
+                        .setDescription(`تم رصد دخول بوت غير موثق بالوايت ليست، وقام النظام بطرده فوراً خارج السيرفر لضمان الأمان الداخلي.`)
                         .addFields(
-                            { name: '🤖 اسم البوت المستهدف', value: `\`${member.user.tag}\``, inline: true },
-                            { name: '🆔 معرف البوت', value: `\`${member.id}\``, inline: true },
-                            { name: '👤 المسؤول عن الدعوة', value: `${inviterTag}`, inline: false }
+                            { name: '🤖 البوت المطرود', value: `\`${member.user.tag}\` (\`${member.id}\`)`, inline: true },
+                            { name: '👤 المسؤول عن دعوته', value: `${inviterTag}`, inline: true }
                         )
-                        .setColor('#000000')
+                        .setColor('#ef4444')
                         .setThumbnail(member.user.displayAvatarURL())
                         .setTimestamp();
-
-                    const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder().setCustomId(`approve_${member.id}_${member.guild.id}`).setLabel('موافقة وتوثيق ✅').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`reject_${member.id}_${member.guild.id}`).setLabel('رفض وطرد نهائي ❌').setStyle(ButtonStyle.Danger)
-                    );
-
-                    await logChannel.send({ embeds: [logEmbed], components: [actionRow] });
+                    await logChannel.send({ embeds: [kickEmbed] });
+                }
+            } else {
+                console.log(`❌ خطأ أمني: لم يتم طرد البوت لأن [ member.kickable = false ]!`);
+                console.log(`💡 الحل: ارفع رتبة بوت KRB في إعدادات السيرفر لتكون أعلى رتبة فوق كل البوتات، وتأكد من تفعيل صلاحية Kick Members له.`);
+                
+                // خطة طوارئ بديلة: إذا فشل الطرد بسبب الرتبة، نقوم بكتمه وسحب صلاحياته تماماً كأضعف الإيمان لحين تدخل المالك
+                if (member.manageable) await member.roles.set([]).catch(() => {});
+                await member.timeout(2419200000, 'KRB Isolation Fallback').catch(() => {});
+                
+                if (logChannel) {
+                    const failEmbed = new EmbedBuilder()
+                        .setTitle('⚠️ فشل الطرد التلقائي - رتبة البوت ضعيفة')
+                        .setDescription(`تم رصد بوت غير موثق، وحاول النظام طرده لكن صلاحيات رتبة النظام أقل من رتبة البوت الدخيل! تم تطبيق كتم مؤقت وعزل كإجراء احترازي.`)
+                        .addFields(
+                            { name: '🤖 البوت الدخيل', value: `\`${member.user.tag}\`` },
+                            { name: '🛠️ الإجراء المطلوب', value: 'يرجى رفع رتبة بوت الحماية KRB إلى أعلى القائمة في السيرفر فوراً.' }
+                        )
+                        .setColor('#f59e0b');
+                    await logChannel.send({ embeds: [failEmbed] });
                 }
             }
+
         } catch (err) {
-            console.error(err);
+            console.error("❌ حدث خطأ غير متوقع أثناء معالجة دخول البوت:", err);
         }
+    } else {
+        console.log(`🟢 البوت المضاف [ ${member.user.tag} ] موثق ومصرح له بالدخول مسبقاً (Whitelisted).`);
     }
 });
 
@@ -319,7 +322,6 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         if (action === 'approve') {
             if (!targetBotMember) return;
 
-            // فحص التوثيق القوي من ديسكورد (Verified Bot Check) وليس مجرد كلمة Bot عادية
             const isOfficiallyVerified = targetBotMember.user.flags?.has(UserFlagsBitField.Flags.VerifiedBot) || false;
 
             if (!isOfficiallyVerified) {
@@ -799,7 +801,7 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// 🚀 بوابات المعالجة الذكية وحفظ السحاب المستقر
+// 🚀 بوابات المعالجة الذكية وحفظ السحاب
 // ==========================================
 app.post('/api/save-config', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
@@ -833,7 +835,7 @@ app.post('/api/save-config', async (req, res) => {
         serverBlacklistedUsers: current.serverBlacklistedUsers || []
     };
     
-    await saveDB(); // الحفظ الآمن في المونجو
+    await saveDB();
     res.redirect(`/?guildId=${guildId}`);
 });
 
