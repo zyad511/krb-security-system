@@ -1,120 +1,147 @@
-import { Client, GatewayIntentBits, AuditLogEvent } from 'discord.js';
-import mongoose from 'mongoose';
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KRB SYSTEM | CENTRAL CONTROL INTERFACE</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #000000;
+            --bg-card: #09090b;
+            --border-color: #27272a;
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1aa;
+            --accent-red: #ef4444;
+            --accent-green: #22c55e;
+        }
 
-// 🔑 تصدير الـ Client عشان يقرأه ملف السيرفر وملف الأحداث بدون أخطاء Build
-export const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildModeration
-  ]
-});
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-primary); padding: 40px 20px; max-width: 1200px; margin: 0 auto; }
+        
+        header { border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+        .status-badge { background-color: #18181b; border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 9999px; font-size: 13px; color: var(--accent-green); display: flex; align-items: center; gap: 8px; }
+        .status-badge::before { content: ''; width: 8px; height: 8px; background-color: var(--accent-green); border-radius: 50%; display: inline-block; }
 
-export const SUPREME_OWNER_ID = '1065985362658345040'; 
-export const whitelistedBots = new Set<string>(); 
-const PREFIX = '.';
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 40px; }
+        .card { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 30px; border-radius: 8px; }
+        .card h2 { font-size: 18px; margin-bottom: 20px; font-weight: 600; color: var(--text-primary); border-right: 4px solid var(--text-primary); padding-right: 12px; }
 
-const nukeTracker = new Map<string, { count: number; lastAction: number }>();
-const spamTracker = new Map<string, { count: number; lastMessage: number }>();
+        label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; font-weight: 600; }
+        input, textarea, select { width: 100%; background: #18181b; border: 1px solid var(--border-color); color: var(--text-primary); padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; transition: all 0.2s; }
+        input:focus, textarea:focus, select:focus { border-color: #71717a; outline: none; }
 
-const MONGO_URI = process.env.MONGO_URI || '';
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI).catch(() => console.log('[KRB] Secure Memory Mode active.'));
-}
+        .btn { width: 100%; background: var(--text-primary); color: var(--bg-main); border: none; padding: 14px; font-weight: 700; cursor: pointer; border-radius: 6px; transition: all 0.2s; font-size: 14px; }
+        .btn:hover { background: #e4e4e7; transform: translateY(-1px); }
+        .btn-danger { background: transparent; border: 1px solid var(--accent-red); color: var(--accent-red); }
+        .btn-danger:hover { background: var(--accent-red); color: #ffffff; }
 
-// ⚡ نظام عزل وحماية السيرفر من البوتات
-client.on('guildMemberAdd', async (member) => {
-  if (!member.user.bot) return;
-  if (!whitelistedBots.has(member.user.id)) {
-    if (member.manageable) await member.roles.set([]).catch(() => {});
-    await member.timeout(2419200000, 'KRB Security Bot Isolation').catch(() => {});
-  }
-});
+        .table-container { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; }
+        th { color: var(--text-secondary); font-size: 13px; font-weight: 600; padding: 16px; border-bottom: 1px solid var(--border-color); }
+        td { padding: 16px; border-bottom: 1px solid var(--border-color); font-size: 14px; color: #e4e4e7; }
+        
+        .code-style { background: #18181b; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #f4f4f5; border: 1px solid var(--border-color); }
+    </style>
+</head>
+<body>
 
-// 🔥 أنتي نيوك (Anti-Nuke) الرومات والرولات
-async function handleNuke(guildId: string, execId: string) {
-  if (execId === client.user?.id || execId === SUPREME_OWNER_ID) return;
-  const now = Date.now();
-  const data = nukeTracker.get(execId) || { count: 0, lastAction: now };
-  if (now - data.lastAction < 5000) {
-    data.count++;
-    if (data.count > 2) {
-      const guild = client.guilds.cache.get(guildId);
-      if (guild && execId !== guild.ownerId) {
-        await guild.members.ban(execId, { reason: 'KRB Anti-Nuke Triggered' }).catch(() => {});
-      }
-    }
-  } else { data.count = 1; data.lastAction = now; }
-  nukeTracker.set(execId, data);
-}
+    <header>
+        <h1>KRB ADMINISTRATIVE INFRASTRUCTURE</h1>
+        <div class="status-badge">مرحباً أبو عتب | جدار الحماية نشط ومستقر</div>
+    </header>
 
-client.on('channelDelete', async (c) => {
-  if ('guild' in c && c.guild) {
-    const logs = await c.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.ChannelDelete }).catch(() => null);
-    if (logs?.entries.first()?.executor) await handleNuke(c.guild.id, logs.entries.first()!.executor!.id);
-  }
-});
+    <div class="grid">
+        <div class="card">
+            <h2>✉️ إرسال رسالة مخصصة لسيرفر معين</h2>
+            <form action="/api/send-custom" method="POST">
+                <label>معرف السيرفر المستهدف (Guild ID) *</label>
+                <input type="text" name="guildId" placeholder="أدخل الـ ID الخاص بالسيرفر هنا..." required>
+                
+                <label>معرف القناة النصية (Channel ID) - اختياري</label>
+                <input type="text" name="channelId" placeholder="اتركه فارغاً للإرسال في القناة الافتراضية للقروب...">
 
-// 💬 نظام الـ Anti-Spam والأوامر المفتوحة للجميع
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
+                <label>نص الرسالة المراد توجيهها</label>
+                <textarea name="message" rows="4" placeholder="اكتب نص رسالتك الملكية هنا..." required></textarea>
+                
+                <button type="submit" class="btn">إطلاق الإرسال الفوري 🚀</button>
+            </form>
+        </div>
 
-  // السبام شغال تلقائي ويمسح ويعزل العضو العادي بدون قيود
-  const now = Date.now();
-  const userData = spamTracker.get(message.author.id) || { count: 0, lastMessage: now };
-  if (now - userData.lastMessage < 3000) {
-    userData.count++;
-    if (userData.count > 4) {
-      if (message.member?.manageable) {
-        await message.delete().catch(() => {});
-        await message.member.timeout(60000, 'KRB Anti-Spam').catch(() => {});
-        await message.channel.send(`⚠️ **[KRB ANTI-SPAM]:** تم عزل ${message.author} مؤقتاً لحماية الشات.`);
-      }
-      userData.count = 0;
-    }
-  } else { userData.count = 1; userData.lastMessage = now; }
-  spamTracker.set(message.author.id, userData);
+        <div class="card">
+            <h2>🚫 إدارة حظر النظام (Blacklist Control)</h2>
+            <form action="/api/blacklist" method="POST">
+                <label>نوع الهدف المراد حظره</label>
+                <select name="type">
+                    <option value="user">حظر مستخدم محدد (User ID)</option>
+                    <option value="guild">حظر سيرفر بالكامل (Server ID)</option>
+                </select>
 
-  if (!message.content.startsWith(PREFIX)) return;
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const command = args.shift()?.toLowerCase();
-  const icon = message.guild.iconURL({ extension: 'png' }) || '';
+                <label>المعرف الفريد (ID) *</label>
+                <input type="text" name="targetId" placeholder="ضع الرقم التعريفي ID هنا..." required>
 
-  if (command === 'help') {
-    return message.reply('🔳 **KRB SYSTEM ONLINE**\n• `.ticket-setup` : لتشغيل نظام التذاكر.');
-  }
+                <label>الإجراء المطلوب اتخاذه</label>
+                <select name="action">
+                    <option value="add">إدراج وتفعيل المنشن الفوري لحسابي 🔒</option>
+                    <option value="remove">إزالة من القائمة السوداء وفك العزل ✅</option>
+                </select>
+                
+                <button type="submit" class="btn btn-danger">تنفيذ وتحديث جدار العزل الأمني 🛡️</button>
+            </form>
+        </div>
+    </div>
 
-  if (command === 'ticket-setup') {
-    const { EmbedBuilder, StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-    const embed = new EmbedBuilder()
-      .setAuthor({ name: `KRB SYSTEM`, iconURL: icon })
-      .setTitle('🔳 **مـركـز الـدّعـم الـفـنّـي والـخـخدمات**')
-      .setColor('#000000')
-      .setDescription('اختر القسم المطلوب من الأسفل لفتح تذكرة جديدة للتواصل مع الإدارة:');
+    <div class="table-container">
+        <h2 style="font-size: 18px; margin-bottom: 20px; font-weight: 600;">📦 مراقبة خريطة السيرفرات الحية المتصلة بالبوت</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>اسم السيرفر المضيف</th>
+                    <th>معرف السيرفر (ID)</th>
+                    <th>إجمالي عدد الأعضاء</th>
+                    <th>الحالة الأمنية بالنظام</th>
+                </tr>
+            </thead>
+            <tbody id="servers-list">
+                <tr>
+                    <td colspan="4" style="text-align: center; color: var(--text-secondary);">جاري سحب البيانات ومزامنة الشبكة...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId('tk_hybrid_menu')
-      .setPlaceholder('🔲 اضغط هنا للاختيار من القائمة...')
-      .addOptions([
-        { label: 'قسم الدعم الفني', value: 'tech', emoji: '🛠️' },
-        { label: 'قسم الشكاوى', value: 'report', emoji: '🛡️' }
-      ]);
+    <script>
+        // كود تلقائي مدمج لجلب بيانات السيرفرات من الـ API الحية وتحديث الجدول تلقائياً
+        async function loadConnectedServers() {
+            try {
+                const response = await fetch('/api/servers');
+                const servers = await response.json();
+                const tbody = document.getElementById('servers-list');
+                
+                if(servers.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center;">لا يوجد سيرفرات متصلة بالبوت حالياً.</td></tr>`;
+                    return;
+                }
 
-    const rowMenu = new ActionRowBuilder().addComponents(menu);
-    const rowButtons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('tk_general_btn').setLabel('الدعم التقني 🛠️').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('tk_report_btn').setLabel('تقديم بلاغ 🛡️').setStyle(ButtonStyle.Danger)
-    );
-
-    await message.channel.send({ embeds: [embed], components: [rowMenu, rowButtons] });
-    await message.delete().catch(() => {});
-  }
-});
-
-// 🔗 استدعاء ملف السيرفر وملف التفاعلات لربط المشروع بالكامل
-import './server';
-import './events/interactionCreate';
-
-client.login(process.env.DISCORD_TOKEN);
+                tbody.innerHTML = servers.map(srv => `
+                    <tr>
+                        <td>${srv.name}</td>
+                        <td><span class="code-style">${srv.id}</span></td>
+                        <td>${srv.memberCount} عضو</td>
+                        <td>
+                            <span style="color: ${srv.isBlacklisted ? '#ef4444' : '#22c55e'}">
+                                ${srv.isBlacklisted ? '⛔ محظور ومعزول' : '🟢 محمي ومصرح'}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                console.error("خطأ أثناء تحديث جدول السيرفرات:", err);
+            }
+        }
+        // تشغيل الجلب التلقائي بمجرد فتح الصفحة
+        loadConnectedServers();
+    </script>
+</body>
+</html>
