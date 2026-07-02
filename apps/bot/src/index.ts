@@ -8,10 +8,8 @@ import {
   ButtonStyle, 
   StringSelectMenuBuilder, 
   ChannelType,
-  ApplicationCommandOptionType,
   Interaction,
   TextChannel,
-  AttachmentBuilder,
   AuditLogEvent
 } from 'discord.js';
 import mongoose from 'mongoose';
@@ -36,7 +34,7 @@ const PREFIX = '.';
 
 const whitelistedBots = new Set<string>(); 
 const nukeTracker = new Map<string, { count: number; lastAction: number }>();
-const spamTracker = new Map<string, { count: number; lastMessage: number }>(); // تعقب السبام
+const spamTracker = new Map<string, { count: number; lastMessage: number }>();
 
 // الاتصال الاختياري بالمونقو
 const MONGO_URI = process.env.MONGO_URI || '';
@@ -58,6 +56,7 @@ http.createServer(async (req, res) => {
     req.on('end', async () => {
       const postData = querystring.parse(body);
 
+      // أ) بث موحد
       if (url === '/api/broadcast') {
         const messageContent = postData.message as string;
         if (messageContent) {
@@ -75,6 +74,7 @@ http.createServer(async (req, res) => {
         }
       }
 
+      // ب) مغادرة السيرفرات
       if (url === '/api/leave') {
         const guildId = postData.guildId as string;
         if (guildId) {
@@ -83,6 +83,7 @@ http.createServer(async (req, res) => {
         }
       }
 
+      // ج) قبول البوت عبر الويب
       if (url === '/api/whitelist') {
         const botId = postData.botId as string;
         if (botId) {
@@ -169,6 +170,13 @@ http.createServer(async (req, res) => {
               </form>
             </div>
           </div>
+          <div style="margin-top: 40px;">
+            <h2>📦 قائمة السيرفرات المتصلة بالشبكة (${client.guilds.cache.size})</h2>
+            <table>
+              <thead><tr><th>اسم السيرفر</th><th>ID السيرفر</th><th>عدد الأعضاء</th><th>الإجراءات المتاحة</th></tr></thead>
+              <tbody>${guildsHtml || '<tr><td colspan="4" style="text-align:center; color:#555;">لا توجد سيرفرات متصلة حالياً.</td></tr>'}</tbody>
+            </table>
+          </div>
         </div>
       </body>
       </html>
@@ -191,10 +199,9 @@ client.on('guildMemberAdd', async (member) => {
       if (systemChannel) {
         const alert = new EmbedBuilder()
           .setTitle('🚨 **[KRB SECURITY] تم رصد وعزل بوت غير مصرح**')
-          .setDescription(`دخل البوت \`${member.user.tag}\` إلى السيرفر.\n\n🛡️ **الإجراء المتخذ تلقائياً:**\n- تم سحب كافة صلاحياته ورتبه بالكامل.\n- تم إدخاله في عزل تام وميوت شامل (Timeout).\n\n*يمكنك التحكم بالبوت عبر الأزرار أدناه مباشرة:*`)
+          .setDescription(`دخل البوت \`${member.user.tag}\` إلى السيرفر.\n\n🛡️ **الإجراء المتخذ تلقائياً:**\n- تم سحب كافة صلاحياته ورتبه بالكامل.\n- تم إدخاله في عزل تام وميوت شامل (Timeout).\n\n*يمكنك اتخاذ إجراء فوري عبر الأزرار أدناه:*`)
           .setColor('#000000');
 
-        // أزرار التحكم السريعة والآمنة ظهرت هنا تلقائياً لتوثيق أو طرد البوت
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
           new ButtonBuilder().setCustomId(`approve_${member.user.id}_${member.guild.id}`).setLabel('قبول وتفعيل ✅').setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`reject_${member.user.id}_${member.guild.id}`).setLabel('طرد وتطهير ❌').setStyle(ButtonStyle.Danger)
@@ -233,7 +240,6 @@ async function handleNukeDetection(guildId: string, executorId: string, actionTy
   nukeTracker.set(executorId, trackingData);
 }
 
-// حماية الرومات (حذف / إنشاء)
 client.on('channelDelete', async (channel) => {
   if (!('guild' in channel) || !channel.guild) return;
   try {
@@ -252,7 +258,6 @@ client.on('channelCreate', async (channel) => {
   } catch {}
 });
 
-// حماية الرولات (حذف / إنشاء) - شغالة الآن 100%
 client.on('roleDelete', async (role) => {
   try {
     const auditLogs = await role.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleDelete }).catch(() => null);
@@ -275,16 +280,17 @@ client.on('roleCreate', async (role) => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // 1️⃣ خوارزمية الـ Anti-Spam (تشتغل تلقائياً لحماية الشات)
+  // 1️⃣ نظام الـ Anti-Spam المطور (مسح الرسائل + ميوت تلقائي)
   const now = Date.now();
   const userData = spamTracker.get(message.author.id) || { count: 0, lastMessage: now };
   
-  if (now - userData.lastMessage < 3000) { // إذا أرسل أكثر من 5 رسائل بـ 3 ثواني
+  if (now - userData.lastMessage < 3000) {
     userData.count++;
-    if (userData.count > 5) {
+    if (userData.count > 4) {
       if (message.member?.manageable) {
-        await message.member.timeout(60000, 'KRB Anti-Spam: Sending messages too fast.').catch(() => {});
-        await message.channel.send(`⚠️ **[KRB ANTI-SPAM]:** تم إعطاؤك عزل دقيقة ${message.author} بسبب تكرار الرسائل السريع.`).catch(() => {});
+        await message.delete().catch(() => {}); // حذف رسالة المخرب فوراً
+        await message.member.timeout(60000, 'KRB Anti-Spam: Automated protection.').catch(() => {});
+        await message.channel.send(`⚠️ **[KRB ANTI-SPAM]:** تم إدخال العضو ${message.author} في عزل مؤقت وحذف رسائله بسبب التكرار السريع.`).catch(() => {});
       }
       userData.count = 0;
     }
@@ -313,9 +319,9 @@ client.on('messageCreate', async (message) => {
       .setDescription(
         `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ\n\n` +
         `مرحباً بك في منصة تذاكر الدعم الفني الرسمية لنظام **KRB**.\n` +
-        `فضلاً اختر الطريقة الأنسب لك لبدء محادثة مشفرة مع الإدارة قريباً:\n\n` +
-        `🔲 **الخيار الأول:** القائمة المنسدلة الذكية\n` +
-        `🔲 **الخيار الثاني:** الأزرار التفاعلية المباشرة\n\n` +
+        `فضلاً اختر القسم المطلوب لبدء تذكرة خاصة ومشفرة مع الإدارة:\n\n` +
+        `🔲 **القسم الأول:** الدعم الفني والتقني 🛠️\n` +
+        `🔲 **القسم الثاني:** الشكاوى والبلاغات السرية 🛡️\n\n` +
         `ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ ـ`
       );
 
@@ -339,20 +345,63 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==========================================
-// 🔘 معالجة التفاعلات (أزرار التكت وأزرار قبول/طرد البوتات)
+// 🔘 معالجة كافة التفاعلات (إنشاء وإغلاق التكت + أزرار الأمان)
 // ==========================================
 client.on('interactionCreate', async (interaction: Interaction) => {
   if (!interaction.guild || !interaction.isRepliable()) return;
 
-  // أ) إغلاق التكت
+  // 1️⃣ معالجة فتح التذاكر (سواء من الأزرار أو القائمة المنسدلة)
+  const isTicketClick = (interaction.isButton() && ['tk_general_btn', 'tk_report_btn'].includes(interaction.customId)) ||
+                        (interaction.isStringSelectMenu() && interaction.customId === 'tk_hybrid_menu');
+
+  if (isTicketClick) {
+    await interaction.deferReply({ ephemeral: true });
+    
+    let typeLabel = 'دعم-عام';
+    if (interaction.isButton() && interaction.customId === 'tk_report_btn') typeLabel = 'بلاغ-سري';
+    if (interaction.isStringSelectMenu() && interaction.values[0] === 'report') typeLabel = 'بلاغ-سري';
+
+    const channelName = `ticket-${typeLabel}-${interaction.user.username}`;
+    
+    try {
+      const ticketChannel = await interaction.guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        permissionOverwrites: [
+          { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks] },
+          { id: client.user!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks, PermissionFlagsBits.ManageChannels] }
+        ]
+      });
+
+      const tEmbed = new EmbedBuilder()
+        .setAuthor({ name: 'KRB SYSTEM | TICKETS' })
+        .setTitle('🔳 **تم إنشاء غرفة الدعم المشفرة**')
+        .setDescription(`مرحباً بك ${interaction.user} في مركز الخدمة.\nالرجاء طرح تفاصيل طلبك هنا بالكامل، وسيتم الرد عليك من قبل الإدارة العليا.`)
+        .setColor('#000000')
+        .setTimestamp();
+
+      const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('close_hybrid_ticket').setLabel('إغلاق التذكرة 🔒').setStyle(ButtonStyle.Danger)
+      );
+
+      await ticketChannel.send({ embeds: [tEmbed], components: [closeRow] });
+      await interaction.editReply({ content: `✅ تم فتح تذكرتك بنجاح: ${ticketChannel}` });
+    } catch (err) {
+      await interaction.editReply({ content: '❌ فشل إنشاء غرفة التذكرة، تأكد من صلاحيات البوت العليا.' });
+    }
+    return;
+  }
+
+  // 2️⃣ إغلاق التكت وتدميره
   if (interaction.isButton() && interaction.customId === 'close_hybrid_ticket') {
     const channel = interaction.channel as TextChannel;
-    await interaction.reply({ content: '🔳 **[KRB SYSTEM]:** جاري تدمير القناة نهائياً...' }).catch(() => {});
+    await interaction.reply({ content: '🔳 **[KRB SYSTEM]:** جاري تدمير وتطهير قنوات التذكرة فوراً...' }).catch(() => {});
     setTimeout(() => channel.delete().catch(() => {}), 1500);
     return;
   }
 
-  // ب) أزرار نظام الحماية (Approve / Reject) للبوتات
+  // 3️⃣ أزرار الأمان للتحكم بالبوتات المعزولة (Approve / Reject)
   if (interaction.isButton()) {
     const [action, botId, guildId] = interaction.customId.split('_');
     if (action !== 'approve' && action !== 'reject') return;
@@ -364,7 +413,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
     const isSupreme = interaction.user.id === SUPREME_OWNER_ID;
 
     if (!isSupreme && !isOwner) {
-      return interaction.reply({ content: '❌ هذا الزر مخصص للإدارة العليا أو مالك السيرفر فقط.', ephemeral: true });
+      return interaction.reply({ content: '❌ هذا الإجراء متاح للإدارة العليا لنظام KRB فقط.', ephemeral: true });
     }
 
     await interaction.deferUpdate();
