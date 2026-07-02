@@ -18,7 +18,7 @@ import mongoose from 'mongoose';
 import http from 'http';
 import querystring from 'querystring';
 
-const client = new Client({
+export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -34,7 +34,7 @@ const client = new Client({
 const SUPREME_OWNER_ID = '1065985362658345040'; // هويتك الشخصية المحمية
 const PREFIX = '.';
 
-const whitelistedBots = new Set<string>(); 
+export const whitelistedBots = new Set<string>(); 
 const nukeTracker = new Map<string, { count: number; lastAction: number }>();
 
 // الاتصال الاختياري بالمونقو
